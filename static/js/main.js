@@ -50,11 +50,16 @@
 
         // --- Google Drive integration ---
         driveInit({
-            getPosition: function () { return { x: player.x, y: player.y }; },
-            setPosition: function (x, y) {
+            getPosition: function () {
+                return { x: player.x, y: player.y, vx: velocity.x, vy: velocity.y, angle: angle };
+            },
+            setPosition: function (x, y, vx, vy, ang) {
                 const margin = 16;
-                player.x = Math.max(margin, Math.min(window.innerWidth  - margin, x));
-                player.y = Math.max(margin, Math.min(window.innerHeight - margin, y));
+                player.x  = Math.max(margin, Math.min(window.innerWidth  - margin, x));
+                player.y  = Math.max(margin, Math.min(window.innerHeight - margin, y));
+                velocity.x = vx  || 0;
+                velocity.y = vy  || 0;
+                angle      = ang || 0;
                 placePlayer();
                 updateHUD();
             }

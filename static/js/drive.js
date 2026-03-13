@@ -21,7 +21,7 @@ let accessToken   = null;
 let folderId      = null; // cached after first lookup
 let saveFileId    = null; // cached after first lookup/create
 let autosaveTimer = null;
-let driveCallbacks = null; // { getPosition(), setPosition(x,y) }
+let driveCallbacks = null; // { getPosition(), setPosition(x,y,vx,vy,angle) }
 
 // ---- Session token ------------------------------------------------
 function storeToken(token, expiresIn) {
@@ -91,8 +91,8 @@ async function driveLoadPosition() {
         if (!r.ok) return null;
         const lines = (await r.text()).trim().split("\n");
         if (lines.length < 2) return null;
-        const [x, y] = lines[1].split(",").map(Number);
-        return (isNaN(x) || isNaN(y)) ? null : { x, y };
+        const [x, y, vx = 0, vy = 0, angle = 0] = lines[1].split(",").map(Number);
+        return (isNaN(x) || isNaN(y)) ? null : { x, y, vx, vy, angle };
     } catch (e) {
         console.warn("Drive load error:", e);
         return null;
@@ -102,9 +102,15 @@ async function driveLoadPosition() {
 async function driveSavePosition(x, y, keepalive = false) {
     if (!accessToken) return;
     setDriveStatus("saving");
+    const state = (driveCallbacks && driveCallbacks.getPosition) ? driveCallbacks.getPosition() : { x, y, vx: 0, vy: 0, angle: 0 };
     try {
         const parent  = await getOrCreateFolder();
-        const content = "x,y\n" + Math.round(x) + "," + Math.round(y);
+        const content = "x,y,vx,vy,angle\n"
+            + Math.round(state.x)   + ","
+            + Math.round(state.y)   + ","
+            + state.vx.toFixed(4)   + ","
+            + state.vy.toFixed(4)   + ","
+            + state.angle.toFixed(6);
         const fileId  = await findSaveFile();
 
         if (fileId) {
@@ -195,7 +201,7 @@ function setupTokenClient() {
             // Load saved position, or create the file to warm the cache
             const pos = await driveLoadPosition();
             if (pos) {
-                if (driveCallbacks) driveCallbacks.setPosition(pos.x, pos.y);
+                if (driveCallbacks) driveCallbacks.setPosition(pos.x, pos.y, pos.vx, pos.vy, pos.angle);
             } else {
                 // First-ever link: persist current position so pagehide cache is warm
                 if (driveCallbacks) {
@@ -249,7 +255,7 @@ function driveInit(callbacks) {
             // Valid session token: silently reconnect
             setDriveStatus("linked");
             driveLoadPosition().then(function (pos) {
-                if (pos && driveCallbacks) driveCallbacks.setPosition(pos.x, pos.y);
+                if (pos && driveCallbacks) driveCallbacks.setPosition(pos.x, pos.y, pos.vx, pos.vy, pos.angle);
             });
             startAutosave();
         } else {
