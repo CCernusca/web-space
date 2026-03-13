@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Player Movement</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+    <div id="game-container">
+        <div id="world">
+            <div id="player"></div>
+        </div>
+
+        <div id="hud">
+            <div id="position-display">
+                <span>X: <span id="pos-x">0</span></span>
+                <span>Y: <span id="pos-y">0</span></span>
+            </div>
+            <div id="control-hint"></div>
+        </div>
+
+        <!-- Mobile joystick -->
+        <div id="joystick-container" class="hidden">
+            <div id="joystick-base">
+                <div id="joystick-knob"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
