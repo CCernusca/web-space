@@ -43,6 +43,25 @@
         }
 
         requestAnimationFrame(gameLoop);
+
+        // --- Google Drive integration ---
+        driveInit({
+            getPosition: function () { return { x: player.x, y: player.y }; },
+            setPosition: function (x, y) {
+                const margin = 16;
+                player.x = Math.max(margin, Math.min(window.innerWidth  - margin, x));
+                player.y = Math.max(margin, Math.min(window.innerHeight - margin, y));
+                placePlayer();
+                updateHUD();
+            }
+        });
+
+        // Save position when the page is hidden/closed
+        window.addEventListener("pagehide", function () {
+            if (typeof window.driveSavePosition === "function") {
+                window.driveSavePosition(player.x, player.y, true /* keepalive */);
+            }
+        });
     }
 
     // --- Render helpers ---

@@ -131,6 +131,134 @@ body {
     touch-action: none;
 }
 
+/* --- Drive status (HUD row) --- */
+#drive-status {
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 12px;
+    color: #aaa;
+    letter-spacing: 0.04em;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+}
+
+.drive-ok {
+    color: #4caf82;
+    font-weight: bold;
+}
+
+.drive-saving {
+    color: #f0c040;
+    font-weight: bold;
+}
+
+.drive-link-btn {
+    background: none;
+    border: 1px solid rgba(233, 69, 96, 0.6);
+    border-radius: 5px;
+    color: #e94560;
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    padding: 2px 10px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.drive-link-btn:hover {
+    background: rgba(233, 69, 96, 0.15);
+}
+
+/* --- Modal overlay --- */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(4px);
+}
+
+.modal-box {
+    background: #0f172a;
+    border: 1px solid rgba(233, 69, 96, 0.4);
+    border-radius: 14px;
+    padding: 36px 40px;
+    max-width: 360px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+}
+
+.modal-icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+}
+
+.modal-box h2 {
+    font-size: 18px;
+    color: #e0e0e0;
+    margin-bottom: 10px;
+    letter-spacing: 0.03em;
+}
+
+.modal-box p {
+    font-size: 13px;
+    color: #888;
+    line-height: 1.6;
+    margin-bottom: 24px;
+}
+
+.modal-box code {
+    color: #e94560;
+    background: rgba(233, 69, 96, 0.1);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: inherit;
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.btn-primary {
+    background: #e94560;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: bold;
+    padding: 10px 24px;
+    cursor: pointer;
+    transition: background 0.15s;
+    letter-spacing: 0.04em;
+}
+
+.btn-primary:hover { background: #c73650; }
+
+.btn-secondary {
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: #888;
+    font-family: inherit;
+    font-size: 14px;
+    padding: 10px 24px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    letter-spacing: 0.04em;
+}
+
+.btn-secondary:hover { border-color: #aaa; color: #ccc; }
+
 /* --- Utility --- */
 .hidden {
     display: none !important;
