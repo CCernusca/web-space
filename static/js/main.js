@@ -20,6 +20,7 @@
     const joystickBase = document.getElementById("joystick-base");
     const joystickKnob = document.getElementById("joystick-knob");
     const controlHint = document.getElementById("control-hint");
+    const deviceTypeEl = document.getElementById("device-type");
 
     // --- Device detection ---
     const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i
@@ -31,10 +32,12 @@
         updateHUD();
 
         if (isMobile) {
+            deviceTypeEl.innerHTML = "Device: <span>Mobile</span>";
             joystickContainer.classList.remove("hidden");
             controlHint.textContent = "Use the joystick to move";
             setupJoystick();
         } else {
+            deviceTypeEl.innerHTML = "Device: <span>PC</span>";
             controlHint.textContent = "Use WASD or arrow keys to move";
             setupKeyboard();
         }
