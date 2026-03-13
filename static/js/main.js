@@ -2,11 +2,15 @@
     "use strict";
 
     // --- Config ---
-    const SPEED = 3;          // pixels per frame (PC)
-    const JOYSTICK_RADIUS = 60; // half the base diameter
+    const JOYSTICK_RADIUS = 60; // half the base diameter (px)
+    const MASS       = 1.0;    // kg  — increase for sluggish, decrease for snappy
+    const THRUST     = 0.25;   // force per frame when W/S held
+    const TURN_SPEED = 0.055;  // radians per frame when A/D held
 
     // --- State ---
-    const player = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    const player   = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    const velocity = { x: 0, y: 0 };   // pixels per frame, no drag
+    let   angle    = 0;                 // radians; 0 = pointing up
     const keys = {};
     let joystickActive = false;
     let joystickDir = { x: 0, y: 0 };  // normalised -1..1
@@ -34,11 +38,11 @@
         if (isMobile) {
             deviceTypeEl.innerHTML = "Device: <span>Mobile</span>";
             joystickContainer.classList.remove("hidden");
-            controlHint.textContent = "Use the joystick to move";
+            controlHint.textContent = "Up/Down: thrust  |  Left/Right: turn";
             setupJoystick();
         } else {
             deviceTypeEl.innerHTML = "Device: <span>PC</span>";
-            controlHint.textContent = "Use WASD or arrow keys to move";
+            controlHint.textContent = "W/S: thrust  |  A/D: turn";
             setupKeyboard();
         }
 
@@ -67,7 +71,8 @@
     // --- Render helpers ---
     function placePlayer() {
         playerEl.style.left = player.x + "px";
-        playerEl.style.top = player.y + "px";
+        playerEl.style.top  = player.y + "px";
+        playerEl.style.transform = "translate(-50%, -50%) rotate(" + angle + "rad)";
     }
 
     function updateHUD() {
@@ -85,32 +90,41 @@
     }
 
     function move() {
-        let dx = 0;
-        let dy = 0;
+        let thrust = 0; // -1 (back) to +1 (forward)
+        let turn   = 0; // -1 (left) to +1 (right)
 
         if (isMobile) {
-            dx = joystickDir.x * SPEED;
-            dy = joystickDir.y * SPEED;
+            thrust = -joystickDir.y; // joystick up = negative screen Y = forward
+            turn   =  joystickDir.x;
         } else {
-            if (keys["w"] || keys["arrowup"])    dy -= SPEED;
-            if (keys["s"] || keys["arrowdown"])  dy += SPEED;
-            if (keys["a"] || keys["arrowleft"])  dx -= SPEED;
-            if (keys["d"] || keys["arrowright"]) dx += SPEED;
-
-            // Normalise diagonal so speed is consistent
-            if (dx !== 0 && dy !== 0) {
-                dx *= Math.SQRT1_2;
-                dy *= Math.SQRT1_2;
-            }
+            if (keys["w"] || keys["arrowup"])    thrust += 1;
+            if (keys["s"] || keys["arrowdown"])  thrust -= 1;
+            if (keys["a"] || keys["arrowleft"])  turn   -= 1;
+            if (keys["d"] || keys["arrowright"]) turn   += 1;
         }
 
-        const moving = dx !== 0 || dy !== 0;
-        playerEl.classList.toggle("moving", moving);
+        // Rotate the ship (turning doesn't add velocity)
+        angle += turn * TURN_SPEED;
 
-        // Clamp inside viewport with a small margin
+        // Thrust: F = ma  →  a = F/m, applied along current heading
+        // angle=0 points up, so heading = (sin(angle), -cos(angle)) in screen coords
+        const accel = (thrust * THRUST) / MASS;
+        velocity.x += Math.sin(angle) * accel;
+        velocity.y -= Math.cos(angle) * accel;
+
+        // Integrate position (no drag — velocity persists forever)
+        player.x += velocity.x;
+        player.y += velocity.y;
+
+        // Bounce off viewport edges: cancel the perpendicular velocity component
         const margin = 16;
-        player.x = Math.max(margin, Math.min(window.innerWidth  - margin, player.x + dx));
-        player.y = Math.max(margin, Math.min(window.innerHeight - margin, player.y + dy));
+        if (player.x < margin)                      { player.x = margin;                      velocity.x = Math.max(0, velocity.x); }
+        if (player.x > window.innerWidth  - margin) { player.x = window.innerWidth  - margin; velocity.x = Math.min(0, velocity.x); }
+        if (player.y < margin)                      { player.y = margin;                      velocity.y = Math.max(0, velocity.y); }
+        if (player.y > window.innerHeight - margin) { player.y = window.innerHeight - margin; velocity.y = Math.min(0, velocity.y); }
+
+        const isMoving = velocity.x * velocity.x + velocity.y * velocity.y > 0.01;
+        playerEl.classList.toggle("moving", isMoving);
     }
 
     // --- Keyboard (PC) ---

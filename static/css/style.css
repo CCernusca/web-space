@@ -34,17 +34,19 @@ body {
 /* --- Player --- */
 #player {
     position: absolute;
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 36px;
     background: #e94560;
-    border-radius: 50%;
-    box-shadow: 0 0 12px #e94560, 0 0 24px rgba(233, 69, 96, 0.4);
+    /* Arrow/ship shape pointing up */
+    clip-path: polygon(50% 0%, 95% 100%, 50% 76%, 5% 100%);
     transform: translate(-50%, -50%);
-    transition: box-shadow 0.1s ease;
+    /* drop-shadow works with clip-path; box-shadow does not */
+    filter: drop-shadow(0 0 6px #e94560) drop-shadow(0 0 14px rgba(233, 69, 96, 0.4));
+    transition: filter 0.1s ease;
 }
 
 #player.moving {
-    box-shadow: 0 0 18px #e94560, 0 0 36px rgba(233, 69, 96, 0.6);
+    filter: drop-shadow(0 0 10px #e94560) drop-shadow(0 0 22px rgba(233, 69, 96, 0.65));
 }
 
 /* --- HUD --- */
