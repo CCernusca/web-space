@@ -31,21 +31,32 @@ body {
     overflow: hidden;
 }
 
-/* --- Player --- */
-#player {
+/* --- Entities (dynamically created by main.js) --- */
+.entity {
     position: absolute;
+    transform: translate(-50%, -50%);
+}
+
+/* Non-player entities: simple glowing circle */
+.entity:not(.entity--player) {
+    width: 18px;
+    height: 18px;
+    background: #4a9eff;
+    border-radius: 50%;
+    filter: drop-shadow(0 0 5px #4a9eff) drop-shadow(0 0 10px rgba(74, 158, 255, 0.4));
+}
+
+/* Player entity: directional ship arrow */
+.entity--player {
     width: 28px;
     height: 36px;
     background: #e94560;
-    /* Arrow/ship shape pointing up */
     clip-path: polygon(50% 0%, 95% 100%, 50% 76%, 5% 100%);
-    transform: translate(-50%, -50%);
-    /* drop-shadow works with clip-path; box-shadow does not */
     filter: drop-shadow(0 0 6px #e94560) drop-shadow(0 0 14px rgba(233, 69, 96, 0.4));
     transition: filter 0.1s ease;
 }
 
-#player.moving {
+.entity--player.entity--moving {
     filter: drop-shadow(0 0 10px #e94560) drop-shadow(0 0 22px rgba(233, 69, 96, 0.65));
 }
 

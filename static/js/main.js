@@ -2,29 +2,42 @@
     "use strict";
 
     // --- Config ---
-    const JOYSTICK_RADIUS = 60; // half the base diameter (px)
-    const MASS       = 1.0;    // kg  — increase for sluggish, decrease for snappy
-    const THRUST     = 0.25;   // force per frame when W/S held
-    const TURN_SPEED = 0.055;  // radians per frame when A/D held
+    const JOYSTICK_RADIUS = 60;   // half the base diameter (px)
+    const MASS       = 1.0;       // kg — increase for sluggish, decrease for snappy
+    const THRUST     = 0.25;      // force per frame when W/S held
+    const TURN_SPEED = 0.055;     // radians per frame when A/D held
 
-    // --- State ---
-    const player   = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    const velocity = { x: 0, y: 0 };   // pixels per frame, no drag
-    let   angle    = 0;                 // radians; 0 = pointing up
+    // --- Entity store ---
+    // Each entity: { uid, x, y, vx, vy, angle }
+    // All entities receive physics integration each frame.
+    // Only the entity whose uid matches playerUID responds to player controls.
+    const entities = new Map();
+    let playerUID = "player_" + Math.random().toString(36).slice(2, 9);
+
+    // Bootstrap the initial player entity at screen centre
+    entities.set(playerUID, {
+        uid:   playerUID,
+        x:     window.innerWidth  / 2,
+        y:     window.innerHeight / 2,
+        vx:    0,
+        vy:    0,
+        angle: 0
+    });
+
+    // --- Input state ---
     const keys = {};
     let joystickActive = false;
-    let joystickDir = { x: 0, y: 0 };  // normalised -1..1
-    let animFrameId = null;
+    let joystickDir = { x: 0, y: 0 }; // normalised -1..1
 
     // --- DOM refs ---
-    const playerEl = document.getElementById("player");
-    const posXEl = document.getElementById("pos-x");
-    const posYEl = document.getElementById("pos-y");
+    const worldEl           = document.getElementById("world");
+    const posXEl            = document.getElementById("pos-x");
+    const posYEl            = document.getElementById("pos-y");
     const joystickContainer = document.getElementById("joystick-container");
-    const joystickBase = document.getElementById("joystick-base");
-    const joystickKnob = document.getElementById("joystick-knob");
-    const controlHint = document.getElementById("control-hint");
-    const deviceTypeEl = document.getElementById("device-type");
+    const joystickBase      = document.getElementById("joystick-base");
+    const joystickKnob      = document.getElementById("joystick-knob");
+    const controlHint       = document.getElementById("control-hint");
+    const deviceTypeEl      = document.getElementById("device-type");
 
     // --- Device detection ---
     const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i
@@ -32,7 +45,7 @@
 
     // --- Initialise ---
     function init() {
-        placePlayer();
+        renderEntities();
         updateHUD();
 
         if (isMobile) {
@@ -50,53 +63,76 @@
 
         // --- Google Drive integration ---
         driveInit({
-            getPosition: function () {
-                return { x: player.x, y: player.y, vx: velocity.x, vy: velocity.y, angle: angle };
+            getState: function () {
+                return {
+                    playerUID,
+                    entities: Array.from(entities.values())
+                };
             },
-            setPosition: function (x, y, vx, vy, ang) {
-                const margin = 16;
-                player.x  = Math.max(margin, Math.min(window.innerWidth  - margin, x));
-                player.y  = Math.max(margin, Math.min(window.innerHeight - margin, y));
-                velocity.x = vx  || 0;
-                velocity.y = vy  || 0;
-                angle      = ang || 0;
-                placePlayer();
+            setState: function (state) {
+                entities.clear();
+                for (const e of state.entities) {
+                    entities.set(e.uid, Object.assign({}, e));
+                }
+                playerUID = state.playerUID;
+                renderEntities();
                 updateHUD();
             }
         });
 
-        // Save position when the page is hidden/closed
+        // Save full state when the page is hidden/closed
         window.addEventListener("pagehide", function () {
-            if (typeof window.driveSavePosition === "function") {
-                window.driveSavePosition(player.x, player.y, true /* keepalive */);
+            if (typeof window.driveSave === "function") {
+                window.driveSave(true /* keepalive */);
             }
         });
     }
 
-    // --- Render helpers ---
-    function placePlayer() {
-        playerEl.style.left = player.x + "px";
-        playerEl.style.top  = player.y + "px";
-        playerEl.style.transform = "translate(-50%, -50%) rotate(" + angle + "rad)";
+    // --- Entity DOM management ---
+    function getOrCreateEntityEl(uid) {
+        let el = document.getElementById("ent-" + uid);
+        if (!el) {
+            el = document.createElement("div");
+            el.id = "ent-" + uid;
+            el.className = "entity";
+            worldEl.appendChild(el);
+        }
+        return el;
+    }
+
+    function renderEntities() {
+        // Update or create an element for each entity
+        for (const [uid, e] of entities) {
+            const el = getOrCreateEntityEl(uid);
+            el.classList.toggle("entity--player", uid === playerUID);
+            el.style.left      = e.x + "px";
+            el.style.top       = e.y + "px";
+            el.style.transform = "translate(-50%, -50%) rotate(" + e.angle + "rad)";
+        }
+        // Remove elements for entities that no longer exist
+        for (const el of worldEl.querySelectorAll(".entity")) {
+            if (!entities.has(el.id.slice(4))) el.remove(); // strip "ent-" prefix
+        }
     }
 
     function updateHUD() {
-        // Show position relative to start (centre of screen)
-        posXEl.textContent = Math.round(player.x - window.innerWidth / 2);
-        posYEl.textContent = Math.round(player.y - window.innerHeight / 2);
+        const e = entities.get(playerUID);
+        if (!e) return;
+        posXEl.textContent = Math.round(e.x - window.innerWidth  / 2);
+        posYEl.textContent = Math.round(e.y - window.innerHeight / 2);
     }
 
     // --- Game loop ---
     function gameLoop() {
         move();
-        placePlayer();
+        renderEntities();
         updateHUD();
-        animFrameId = requestAnimationFrame(gameLoop);
+        requestAnimationFrame(gameLoop);
     }
 
     function move() {
-        let thrust = 0; // -1 (back) to +1 (forward)
-        let turn   = 0; // -1 (left) to +1 (right)
+        let thrust = 0;
+        let turn   = 0;
 
         if (isMobile) {
             thrust = -joystickDir.y; // joystick up = negative screen Y = forward
@@ -108,35 +144,43 @@
             if (keys["d"] || keys["arrowright"]) turn   += 1;
         }
 
-        // Rotate the ship (turning doesn't add velocity)
-        angle += turn * TURN_SPEED;
-
-        // Thrust: F = ma  →  a = F/m, applied along current heading
-        // angle=0 points up, so heading = (sin(angle), -cos(angle)) in screen coords
-        const accel = (thrust * THRUST) / MASS;
-        velocity.x += Math.sin(angle) * accel;
-        velocity.y -= Math.cos(angle) * accel;
-
-        // Integrate position (no drag — velocity persists forever)
-        player.x += velocity.x;
-        player.y += velocity.y;
-
-        // Bounce off viewport edges: cancel the perpendicular velocity component
         const margin = 16;
-        if (player.x < margin)                      { player.x = margin;                      velocity.x = Math.max(0, velocity.x); }
-        if (player.x > window.innerWidth  - margin) { player.x = window.innerWidth  - margin; velocity.x = Math.min(0, velocity.x); }
-        if (player.y < margin)                      { player.y = margin;                      velocity.y = Math.max(0, velocity.y); }
-        if (player.y > window.innerHeight - margin) { player.y = window.innerHeight - margin; velocity.y = Math.min(0, velocity.y); }
 
-        const isMoving = velocity.x * velocity.x + velocity.y * velocity.y > 0.01;
-        playerEl.classList.toggle("moving", isMoving);
+        for (const [uid, e] of entities) {
+            const isPlayer = uid === playerUID;
+
+            // Controls only affect the player entity
+            if (isPlayer) {
+                e.angle += turn * TURN_SPEED;
+                const accel = (thrust * THRUST) / MASS;
+                e.vx += Math.sin(e.angle) * accel;
+                e.vy -= Math.cos(e.angle) * accel;
+            }
+
+            // Integrate position — no drag, velocity persists
+            e.x += e.vx;
+            e.y += e.vy;
+
+            // Bounce off viewport edges: zero the component going into the wall
+            if (e.x < margin)                      { e.x = margin;                      e.vx = Math.max(0, e.vx); }
+            if (e.x > window.innerWidth  - margin) { e.x = window.innerWidth  - margin; e.vx = Math.min(0, e.vx); }
+            if (e.y < margin)                      { e.y = margin;                      e.vy = Math.max(0, e.vy); }
+            if (e.y > window.innerHeight - margin) { e.y = window.innerHeight - margin; e.vy = Math.min(0, e.vy); }
+
+            // Thruster glow only on the player entity
+            if (isPlayer) {
+                const el = document.getElementById("ent-" + uid);
+                if (el) {
+                    el.classList.toggle("entity--moving", e.vx * e.vx + e.vy * e.vy > 0.01);
+                }
+            }
+        }
     }
 
     // --- Keyboard (PC) ---
     function setupKeyboard() {
         document.addEventListener("keydown", function (e) {
             keys[e.key.toLowerCase()] = true;
-            // Prevent page scrolling with arrow keys / space
             if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(e.key.toLowerCase())) {
                 e.preventDefault();
             }
@@ -164,14 +208,12 @@
             let dy = touchY - cy;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
-            // Clamp to joystick radius
             if (dist > JOYSTICK_RADIUS) {
                 dx = (dx / dist) * JOYSTICK_RADIUS;
                 dy = (dy / dist) * JOYSTICK_RADIUS;
             }
 
             joystickKnob.style.transform = "translate(" + dx + "px, " + dy + "px)";
-
             joystickDir.x = dx / JOYSTICK_RADIUS;
             joystickDir.y = dy / JOYSTICK_RADIUS;
         }
@@ -208,10 +250,7 @@
             resetKnob();
         }, { passive: false });
 
-        // Recalculate base rect on resize
-        window.addEventListener("resize", function () {
-            baseRect = null;
-        });
+        window.addEventListener("resize", function () { baseRect = null; });
     }
 
     // --- Kick off ---

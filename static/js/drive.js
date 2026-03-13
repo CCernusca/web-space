@@ -1,6 +1,12 @@
 // =========================================================================
-// Google Drive integration — saves/loads player position to
+// Google Drive integration — saves/loads all physics entities to
 //   Google Drive → /.webspace/save.csv
+//
+// CSV format:
+//   playerUID=<uid>
+//   uid,x,y,vx,vy,angle
+//   <uid>,<x>,<y>,<vx>,<vy>,<angle>
+//   ...  (one row per entity)
 //
 // SETUP (one-time):
 //   1. Go to https://console.cloud.google.com/
@@ -16,12 +22,12 @@ const FOLDER_NAME     = ".webspace";
 const SAVE_FILE       = "save.csv";
 const AUTOSAVE_MS     = 30_000; // autosave every 30 s
 
-let tokenClient   = null;
-let accessToken   = null;
-let folderId      = null; // cached after first lookup
-let saveFileId    = null; // cached after first lookup/create
-let autosaveTimer = null;
-let driveCallbacks = null; // { getPosition(), setPosition(x,y,vx,vy,angle) }
+let tokenClient    = null;
+let accessToken    = null;
+let folderId       = null; // cached after first lookup
+let saveFileId     = null; // cached after first lookup/create
+let autosaveTimer  = null;
+let driveCallbacks = null; // { getState(), setState(state) }
 
 // ---- Session token ------------------------------------------------
 function storeToken(token, expiresIn) {
@@ -78,8 +84,65 @@ async function findSaveFile() {
     return null;
 }
 
+// ---- CSV serialisation --------------------------------------------
+function formatSave(playerUID, entities) {
+    const rows = ["playerUID=" + playerUID, "uid,x,y,vx,vy,angle"];
+    for (const e of entities) {
+        rows.push([
+            e.uid,
+            Math.round(e.x),
+            Math.round(e.y),
+            e.vx.toFixed(4),
+            e.vy.toFixed(4),
+            e.angle.toFixed(6)
+        ].join(","));
+    }
+    return rows.join("\n");
+}
+
+function parseSave(text) {
+    const lines = text.trim().split("\n");
+
+    // Legacy format: old single-entity save (x,y,vx,vy,angle header)
+    if (lines.length >= 2 && !lines[0].startsWith("playerUID=")) {
+        const vals = lines[1].split(",").map(Number);
+        if (vals.length >= 2 && !isNaN(vals[0]) && !isNaN(vals[1])) {
+            const uid = "player_legacy";
+            return {
+                playerUID: uid,
+                entities: [{
+                    uid,
+                    x: vals[0], y: vals[1],
+                    vx: vals[2] || 0, vy: vals[3] || 0, angle: vals[4] || 0
+                }]
+            };
+        }
+        return null;
+    }
+
+    if (lines.length < 3) return null;
+
+    const playerUID = lines[0].replace("playerUID=", "");
+    // lines[1] is the header; entity rows start at index 2
+    const entities = [];
+    for (let i = 2; i < lines.length; i++) {
+        const parts = lines[i].split(",");
+        if (parts.length < 6) continue;
+        entities.push({
+            uid:   parts[0],
+            x:     Number(parts[1]),
+            y:     Number(parts[2]),
+            vx:    Number(parts[3]),
+            vy:    Number(parts[4]),
+            angle: Number(parts[5])
+        });
+    }
+    if (entities.length === 0) return null;
+    return { playerUID, entities };
+}
+
 // ---- Public: load / save ------------------------------------------
-async function driveLoadPosition() {
+async function driveLoad() {
     if (!accessToken) return null;
     try {
         const fileId = await findSaveFile();
@@ -89,32 +152,26 @@ async function driveLoadPosition() {
             { headers: { Authorization: "Bearer " + accessToken } }
         );
         if (!r.ok) return null;
-        const lines = (await r.text()).trim().split("\n");
-        if (lines.length < 2) return null;
-        const [x, y, vx = 0, vy = 0, angle = 0] = lines[1].split(",").map(Number);
-        return (isNaN(x) || isNaN(y)) ? null : { x, y, vx, vy, angle };
+        return parseSave(await r.text());
     } catch (e) {
         console.warn("Drive load error:", e);
         return null;
     }
 }
 
-async function driveSavePosition(x, y, keepalive = false) {
+async function driveSave(keepalive = false) {
     if (!accessToken) return;
+    if (!driveCallbacks || !driveCallbacks.getState) return;
+
     setDriveStatus("saving");
-    const state = (driveCallbacks && driveCallbacks.getPosition) ? driveCallbacks.getPosition() : { x, y, vx: 0, vy: 0, angle: 0 };
+    const { playerUID, entities } = driveCallbacks.getState();
+    const content = formatSave(playerUID, entities);
+
     try {
-        const parent  = await getOrCreateFolder();
-        const content = "x,y,vx,vy,angle\n"
-            + Math.round(state.x)   + ","
-            + Math.round(state.y)   + ","
-            + state.vx.toFixed(4)   + ","
-            + state.vy.toFixed(4)   + ","
-            + state.angle.toFixed(6);
-        const fileId  = await findSaveFile();
+        const parent = await getOrCreateFolder();
+        const fileId = await findSaveFile();
 
         if (fileId) {
-            // Update existing file
             await fetch(
                 "https://www.googleapis.com/upload/drive/v3/files/" + fileId + "?uploadType=media",
                 {
@@ -125,7 +182,6 @@ async function driveSavePosition(x, y, keepalive = false) {
                 }
             );
         } else {
-            // Create file with multipart upload
             const boundary = "ws_bound_" + Date.now();
             const metadata = JSON.stringify({ name: SAVE_FILE, parents: [parent] });
             const body = [
@@ -160,8 +216,8 @@ async function driveSavePosition(x, y, keepalive = false) {
     }
 }
 
-// Expose so main.js can call it from the pagehide handler
-window.driveSavePosition = driveSavePosition;
+// Exposed so main.js pagehide handler can call it
+window.driveSave = driveSave;
 
 // ---- UI -----------------------------------------------------------
 function setDriveStatus(state) {
@@ -198,16 +254,12 @@ function setupTokenClient() {
             localStorage.setItem("ws_driveConsent", "true");
             setDriveStatus("linked");
 
-            // Load saved position, or create the file to warm the cache
-            const pos = await driveLoadPosition();
-            if (pos) {
-                if (driveCallbacks) driveCallbacks.setPosition(pos.x, pos.y, pos.vx, pos.vy, pos.angle);
+            const saved = await driveLoad();
+            if (saved) {
+                if (driveCallbacks) driveCallbacks.setState(saved);
             } else {
-                // First-ever link: persist current position so pagehide cache is warm
-                if (driveCallbacks) {
-                    const cur = driveCallbacks.getPosition();
-                    await driveSavePosition(cur.x, cur.y);
-                }
+                // First-ever link: write current state to warm the cache
+                await driveSave();
             }
             startAutosave();
         }
@@ -220,11 +272,7 @@ function requestDriveLink() {
 
 function startAutosave() {
     if (autosaveTimer) clearInterval(autosaveTimer);
-    autosaveTimer = setInterval(function () {
-        if (!driveCallbacks) return;
-        const pos = driveCallbacks.getPosition();
-        driveSavePosition(pos.x, pos.y);
-    }, AUTOSAVE_MS);
+    autosaveTimer = setInterval(driveSave, AUTOSAVE_MS);
 }
 
 function waitForGSI(cb) {
@@ -238,13 +286,11 @@ function waitForGSI(cb) {
 function driveInit(callbacks) {
     driveCallbacks = callbacks;
 
-    // Set up the token client as soon as GIS is loaded
     waitForGSI(setupTokenClient);
 
     const consent = localStorage.getItem("ws_driveConsent");
 
     if (consent === null) {
-        // First visit: ask the user
         showModal();
         setDriveStatus("unlinked");
         return;
@@ -252,24 +298,22 @@ function driveInit(callbacks) {
 
     if (consent === "true") {
         if (restoreToken()) {
-            // Valid session token: silently reconnect
             setDriveStatus("linked");
-            driveLoadPosition().then(function (pos) {
-                if (pos && driveCallbacks) driveCallbacks.setPosition(pos.x, pos.y, pos.vx, pos.vy, pos.angle);
+            driveLoad().then(function (saved) {
+                if (saved && driveCallbacks) driveCallbacks.setState(saved);
             });
             startAutosave();
         } else {
-            // Token expired: show re-link button (requires user gesture for new token)
             setDriveStatus("unlinked");
         }
         return;
     }
 
-    // consent === "false": user skipped before; show button, no modal
+    // consent === "false": show button, no modal
     setDriveStatus("unlinked");
 }
 
-// ---- Modal button wiring (runs after DOM ready) ------------------
+// ---- Modal button wiring -----------------------------------------
 document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("btn-drive-yes").addEventListener("click", function () {
         hideModal();
