@@ -114,14 +114,17 @@ function formatSave(playerUID, entities) {
     // Round physics values to keep the file compact.
     const slim = entities.map(function (e) {
         return {
-            uid:       e.uid,
-            x:         Math.round(e.x),
-            y:         Math.round(e.y),
-            vx:        parseFloat(e.vx.toFixed(4)),
-            vy:        parseFloat(e.vy.toFixed(4)),
-            angle:     parseFloat(e.angle.toFixed(6)),
-            blockData: e.blockData || {},
-            blockMap:  e.blockMap  || {}
+            uid:             e.uid,
+            x:               Math.round(e.x),
+            y:               Math.round(e.y),
+            vx:              parseFloat(e.vx.toFixed(4)),
+            vy:              parseFloat(e.vy.toFixed(4)),
+            angle:           parseFloat(e.angle.toFixed(6)),
+            angularVelocity: parseFloat((e.angularVelocity || 0).toFixed(6)),
+            mass:            e.mass            || 1,
+            interactionRadius: e.interactionRadius || 0,
+            blockData:       e.blockData || {},
+            blockMap:        e.blockMap  || {}
         };
     });
     return JSON.stringify({ playerUID, entities: slim });
@@ -158,12 +161,15 @@ function parseSave(text, isLegacyCsv) {
             const parts = lines[i].split(",");
             if (parts.length < 6) continue;
             entities.push({
-                uid:       parts[0],
-                x:         Number(parts[1]),
-                y:         Number(parts[2]),
-                vx:        Number(parts[3]),
-                vy:        Number(parts[4]),
-                angle:     Number(parts[5]),
+                uid:             parts[0],
+                x:               Number(parts[1]),
+                y:               Number(parts[2]),
+                vx:              Number(parts[3]),
+                vy:              Number(parts[4]),
+                angle:           Number(parts[5]),
+                angularVelocity: 0,
+                mass:            1,
+                interactionRadius: 0,
                 blockData: {},
                 blockMap:  {}
             });
@@ -181,6 +187,7 @@ function parseSave(text, isLegacyCsv) {
                 uid,
                 x: vals[0], y: vals[1],
                 vx: vals[2] || 0, vy: vals[3] || 0, angle: vals[4] || 0,
+                angularVelocity: 0, mass: 1, interactionRadius: 0,
                 blockData: {}, blockMap: {}
             }]
         };

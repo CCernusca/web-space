@@ -13,6 +13,7 @@ BLOCK_REGISTRY = {
             "size": {"x": 1, "y": 1},
             "color": {"r": 80, "g": 105, "b": 150},
             "maxHealth": 50,
+            "mass": 5,
         },
         "data": {
             "health": 50,
@@ -24,6 +25,7 @@ BLOCK_REGISTRY = {
             "size": {"x": 2, "y": 1},
             "color": {"r": 55, "g": 75, "b": 110},
             "maxHealth": 150,
+            "mass": 15,
         },
         "data": {
             "health": 150,
@@ -35,6 +37,7 @@ BLOCK_REGISTRY = {
             "size": {"x": 1, "y": 2},
             "color": {"r": 95, "g": 110, "b": 135},
             "maxHealth": 200,
+            "mass": 20,
         },
         "data": {
             "health": 200,
@@ -46,6 +49,7 @@ BLOCK_REGISTRY = {
             "size": {"x": 1, "y": 1},
             "color": {"r": 60, "g": 160, "b": 200},
             "maxHealth": 80,
+            "mass": 3,
         },
         "data": {
             "health": 80,

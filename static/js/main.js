@@ -3,12 +3,14 @@
 
     // --- Config ---
     const JOYSTICK_RADIUS = 60;   // half the base diameter (px)
-    const MASS       = 1.0;       // kg — increase for sluggish, decrease for snappy
     const THRUST     = 0.25;      // force per frame when W/S held
     const TURN_SPEED = 0.055;     // radians per frame when A/D held
+    const ANG_DAMP   = 0.99;      // angular velocity damping factor per frame
 
     // --- Entity store ---
-    // Each entity: { uid, x, y, vx, vy, angle, blockData, blockMap }
+    // Each entity: { uid, x, y, vx, vy, angle, angularVelocity,
+    //                mass, interactionRadius, momentOfInertia,
+    //                blockData, blockMap }
     // All entities receive physics integration each frame.
     // Only the entity whose uid matches playerUID responds to player controls.
     const entities = new Map();
@@ -16,14 +18,18 @@
 
     // Bootstrap the initial player entity at screen centre
     entities.set(playerUID, {
-        uid:       playerUID,
-        x:         window.innerWidth  / 2,
-        y:         window.innerHeight / 2,
-        vx:        0,
-        vy:        0,
-        angle:     0,
-        blockData: {},  // { [bui]: { typeId, health, ... } }
-        blockMap:  {}   // { "tx,ty": bui }
+        uid:             playerUID,
+        x:               window.innerWidth  / 2,
+        y:               window.innerHeight / 2,
+        vx:              0,
+        vy:              0,
+        angle:           0,
+        angularVelocity: 0,   // collision-induced spin (rad/frame)
+        mass:            1,   // recomputed by tiles.computeEntityProps
+        interactionRadius: 0,
+        momentOfInertia: 1,
+        blockData: {},        // { [bui]: { typeId, health, ... } }
+        blockMap:  {}         // { "tx,ty": bui }
     });
 
     // --- Input state ---
@@ -50,6 +56,9 @@
     async function init() {
         // Load block registry before starting (fast: localStorage hit, or one fetch)
         await tiles.initRegistry();
+
+        // Now that registry is available, compute physics props for all entities
+        for (const e of entities.values()) tiles.computeEntityProps(e);
 
         renderEntities();
         updateHUD();
@@ -78,13 +87,14 @@
             setState: function (state) {
                 entities.clear();
                 for (const e of state.entities) {
-                    // Ensure blockData/blockMap are present even on old saves
                     const entity = Object.assign(
-                        { blockData: {}, blockMap: {} },
+                        // Safe defaults for any properties absent in old saves
+                        { blockData: {}, blockMap: {}, angularVelocity: 0,
+                          mass: 1, interactionRadius: 0, momentOfInertia: 1 },
                         e
                     );
                     entities.set(entity.uid, entity);
-                    tiles.reconcileBlocks(entity);
+                    tiles.reconcileBlocks(entity); // also calls computeEntityProps
                 }
                 playerUID = state.playerUID;
                 renderEntities();
@@ -137,6 +147,7 @@
     // --- Game loop ---
     function gameLoop() {
         move();
+        tiles.resolveCollisions(entities);
         tiles.renderBlocks(canvasEl, entities);
         renderEntities();
         updateHUD();
@@ -162,13 +173,17 @@
         for (const [uid, e] of entities) {
             const isPlayer = uid === playerUID;
 
-            // Controls only affect the player entity
+            // Player controls add directly to angle and linear velocity
             if (isPlayer) {
                 e.angle += turn * TURN_SPEED;
-                const accel = (thrust * THRUST) / MASS;
+                const accel = (thrust * THRUST) / e.mass;
                 e.vx += Math.sin(e.angle) * accel;
                 e.vy -= Math.cos(e.angle) * accel;
             }
+
+            // Integrate collision-induced spin; damp each frame
+            e.angle           += e.angularVelocity;
+            e.angularVelocity *= ANG_DAMP;
 
             // Integrate position — no drag, velocity persists
             e.x += e.vx;
