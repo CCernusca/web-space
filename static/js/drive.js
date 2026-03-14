@@ -29,9 +29,9 @@ let saveFileId     = null; // cached after first lookup/create
 let autosaveTimer  = null;
 let driveCallbacks = null; // { getState(), setState(state) }
 
-// ---- Session token ------------------------------------------------
+// ---- Token persistence (localStorage survives tab/browser close) --
 function storeToken(token, expiresIn) {
-    sessionStorage.setItem("ws_token", JSON.stringify({
+    localStorage.setItem("ws_token", JSON.stringify({
         token,
         expiry: Date.now() + (expiresIn - 60) * 1000
     }));
@@ -39,12 +39,14 @@ function storeToken(token, expiresIn) {
 }
 
 function restoreToken() {
-    const raw = sessionStorage.getItem("ws_token");
+    const raw = localStorage.getItem("ws_token");
     if (!raw) return false;
-    const { token, expiry } = JSON.parse(raw);
-    if (Date.now() >= expiry) return false;
-    accessToken = token;
-    return true;
+    try {
+        const { token, expiry } = JSON.parse(raw);
+        if (Date.now() >= expiry) return false;
+        accessToken = token;
+        return true;
+    } catch (_) { return false; }
 }
 
 // ---- Drive API helpers --------------------------------------------
@@ -225,15 +227,33 @@ function setDriveStatus(state) {
     if (!el) return;
     switch (state) {
         case "linked":
-            el.innerHTML = 'Drive: <span class="drive-ok">Linked ✓</span>';
+            el.innerHTML = 'Drive: <span class="drive-ok">Linked ✓</span>'
+                + ' <button id="btn-drive-unlink" class="drive-unlink-btn">Unlink</button>';
+            document.getElementById("btn-drive-unlink").addEventListener("click", driveUnlink);
             break;
         case "saving":
             el.innerHTML = 'Drive: <span class="drive-saving">Saving…</span>';
+            break;
+        case "reconnecting":
+            el.innerHTML = 'Drive: <span class="drive-saving">Reconnecting…</span>';
             break;
         default:
             el.innerHTML = '<button id="btn-drive-link" class="drive-link-btn">Link Google Drive</button>';
             document.getElementById("btn-drive-link").addEventListener("click", requestDriveLink);
     }
+}
+
+function driveUnlink() {
+    if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
+    if (accessToken && typeof google !== "undefined") {
+        google.accounts.oauth2.revoke(accessToken, function () {});
+    }
+    accessToken = null;
+    folderId    = null;
+    saveFileId  = null;
+    localStorage.removeItem("ws_token");
+    localStorage.setItem("ws_driveConsent", "false");
+    setDriveStatus("unlinked");
 }
 
 function showModal() { document.getElementById("drive-modal").classList.remove("hidden"); }
@@ -298,13 +318,18 @@ function driveInit(callbacks) {
 
     if (consent === "true") {
         if (restoreToken()) {
+            // Valid cached token — restore immediately without any prompt
             setDriveStatus("linked");
             driveLoad().then(function (saved) {
                 if (saved && driveCallbacks) driveCallbacks.setState(saved);
             });
             startAutosave();
         } else {
-            setDriveStatus("unlinked");
+            // Token expired — silently re-acquire via GSI hidden iframe (no popup)
+            setDriveStatus("reconnecting");
+            waitForGSI(function () {
+                if (tokenClient) tokenClient.requestAccessToken({ prompt: "" });
+            });
         }
         return;
     }

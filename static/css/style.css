@@ -185,6 +185,23 @@ body {
     background: rgba(233, 69, 96, 0.15);
 }
 
+.drive-unlink-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.25);
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 2px 4px;
+    margin-left: 6px;
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.drive-unlink-btn:hover {
+    color: #e94560;
+}
+
 /* --- Modal overlay --- */
 .modal-overlay {
     position: fixed;
