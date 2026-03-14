@@ -8,7 +8,7 @@
     const TURN_SPEED = 0.055;     // radians per frame when A/D held
 
     // --- Entity store ---
-    // Each entity: { uid, x, y, vx, vy, angle }
+    // Each entity: { uid, x, y, vx, vy, angle, blockData, blockMap }
     // All entities receive physics integration each frame.
     // Only the entity whose uid matches playerUID responds to player controls.
     const entities = new Map();
@@ -16,12 +16,14 @@
 
     // Bootstrap the initial player entity at screen centre
     entities.set(playerUID, {
-        uid:   playerUID,
-        x:     window.innerWidth  / 2,
-        y:     window.innerHeight / 2,
-        vx:    0,
-        vy:    0,
-        angle: 0
+        uid:       playerUID,
+        x:         window.innerWidth  / 2,
+        y:         window.innerHeight / 2,
+        vx:        0,
+        vy:        0,
+        angle:     0,
+        blockData: {},  // { [bui]: { typeId, health, ... } }
+        blockMap:  {}   // { "tx,ty": bui }
     });
 
     // --- Input state ---
@@ -31,6 +33,7 @@
 
     // --- DOM refs ---
     const worldEl           = document.getElementById("world");
+    const canvasEl          = document.getElementById("world-canvas");
     const posXEl            = document.getElementById("pos-x");
     const posYEl            = document.getElementById("pos-y");
     const joystickContainer = document.getElementById("joystick-container");
@@ -44,7 +47,10 @@
         .test(navigator.userAgent) || window.matchMedia("(pointer: coarse)").matches;
 
     // --- Initialise ---
-    function init() {
+    async function init() {
+        // Load block registry before starting (fast: localStorage hit, or one fetch)
+        await tiles.initRegistry();
+
         renderEntities();
         updateHUD();
 
@@ -72,7 +78,13 @@
             setState: function (state) {
                 entities.clear();
                 for (const e of state.entities) {
-                    entities.set(e.uid, Object.assign({}, e));
+                    // Ensure blockData/blockMap are present even on old saves
+                    const entity = Object.assign(
+                        { blockData: {}, blockMap: {} },
+                        e
+                    );
+                    entities.set(entity.uid, entity);
+                    tiles.reconcileBlocks(entity);
                 }
                 playerUID = state.playerUID;
                 renderEntities();
@@ -125,6 +137,7 @@
     // --- Game loop ---
     function gameLoop() {
         move();
+        tiles.renderBlocks(canvasEl, entities);
         renderEntities();
         updateHUD();
         requestAnimationFrame(gameLoop);

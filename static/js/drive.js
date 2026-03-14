@@ -1,12 +1,19 @@
 // =========================================================================
 // Google Drive integration — saves/loads all physics entities to
-//   Google Drive → /.webspace/save.csv
+//   Google Drive → /.webspace/save.json
 //
-// CSV format:
-//   playerUID=<uid>
-//   uid,x,y,vx,vy,angle
-//   <uid>,<x>,<y>,<vx>,<vy>,<angle>
-//   ...  (one row per entity)
+// Save format (JSON):
+//   {
+//     "playerUID": "<uid>",
+//     "entities": [
+//       { "uid", "x", "y", "vx", "vy", "angle",
+//         "blockData": { "<bui>": { "typeId", "health", ... } },
+//         "blockMap":  { "tx,ty": "<bui>", ... } },
+//       ...
+//     ]
+//   }
+//
+// Legacy CSV saves (save.csv) are detected and migrated automatically.
 //
 // SETUP (one-time):
 //   1. Go to https://console.cloud.google.com/
@@ -16,11 +23,12 @@
 //   5. Replace YOUR_CLIENT_ID below with the generated Client ID
 // =========================================================================
 
-const DRIVE_CLIENT_ID = "YOUR_CLIENT_ID.apps.googleusercontent.com";
-const DRIVE_SCOPE     = "https://www.googleapis.com/auth/drive.file";
-const FOLDER_NAME     = ".webspace";
-const SAVE_FILE       = "save.csv";
-const AUTOSAVE_MS     = 30_000; // autosave every 30 s
+const DRIVE_CLIENT_ID  = "YOUR_CLIENT_ID.apps.googleusercontent.com";
+const DRIVE_SCOPE      = "https://www.googleapis.com/auth/drive.file";
+const FOLDER_NAME      = ".webspace";
+const SAVE_FILE        = "save.json";
+const LEGACY_SAVE_FILE = "save.csv";
+const AUTOSAVE_MS      = 30_000; // autosave every 30 s
 
 let tokenClient    = null;
 let accessToken    = null;
@@ -73,88 +81,126 @@ async function getOrCreateFolder() {
     return (folderId = (await r.json()).id);
 }
 
+// findSaveFile looks for save.json; if absent, checks legacy save.csv.
 async function findSaveFile() {
-    if (saveFileId) return saveFileId;
+    if (saveFileId) return { id: saveFileId, legacy: false };
     const parent = await getOrCreateFolder();
-    const q = "name='" + SAVE_FILE + "' and '" + parent + "' in parents and trashed=false";
-    const res = await driveGet(
-        "https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent(q) + "&fields=files(id)"
+
+    // Try new JSON save first
+    const qNew = "name='" + SAVE_FILE + "' and '" + parent + "' in parents and trashed=false";
+    const resNew = await driveGet(
+        "https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent(qNew) + "&fields=files(id)"
     );
-    if (res.files && res.files.length > 0) {
-        return (saveFileId = res.files[0].id);
+    if (resNew.files && resNew.files.length > 0) {
+        saveFileId = resNew.files[0].id;
+        return { id: saveFileId, legacy: false };
     }
+
+    // Fall back to legacy CSV
+    const qLeg = "name='" + LEGACY_SAVE_FILE + "' and '" + parent + "' in parents and trashed=false";
+    const resLeg = await driveGet(
+        "https://www.googleapis.com/drive/v3/files?q=" + encodeURIComponent(qLeg) + "&fields=files(id)"
+    );
+    if (resLeg.files && resLeg.files.length > 0) {
+        return { id: resLeg.files[0].id, legacy: true };
+    }
+
     return null;
 }
 
-// ---- CSV serialisation --------------------------------------------
+// ---- JSON serialisation -------------------------------------------
 function formatSave(playerUID, entities) {
-    const rows = ["playerUID=" + playerUID, "uid,x,y,vx,vy,angle"];
-    for (const e of entities) {
-        rows.push([
-            e.uid,
-            Math.round(e.x),
-            Math.round(e.y),
-            e.vx.toFixed(4),
-            e.vy.toFixed(4),
-            e.angle.toFixed(6)
-        ].join(","));
-    }
-    return rows.join("\n");
+    // blockData and blockMap are already part of each entity object.
+    // Round physics values to keep the file compact.
+    const slim = entities.map(function (e) {
+        return {
+            uid:       e.uid,
+            x:         Math.round(e.x),
+            y:         Math.round(e.y),
+            vx:        parseFloat(e.vx.toFixed(4)),
+            vy:        parseFloat(e.vy.toFixed(4)),
+            angle:     parseFloat(e.angle.toFixed(6)),
+            blockData: e.blockData || {},
+            blockMap:  e.blockMap  || {}
+        };
+    });
+    return JSON.stringify({ playerUID, entities: slim });
 }
 
-function parseSave(text) {
+// Parse a save file.  Handles:
+//   • new JSON format (save.json)
+//   • old multi-entity CSV (playerUID=... header)
+//   • oldest single-entity CSV (x,y,vx,vy,angle header)
+function parseSave(text, isLegacyCsv) {
+    if (!isLegacyCsv) {
+        try {
+            const obj = JSON.parse(text);
+            if (obj && obj.playerUID && Array.isArray(obj.entities)) {
+                // Ensure blockData/blockMap exist on every entity
+                for (const e of obj.entities) {
+                    if (!e.blockData) e.blockData = {};
+                    if (!e.blockMap)  e.blockMap  = {};
+                }
+                return obj;
+            }
+        } catch (_) {}
+    }
+
+    // Legacy CSV handling (both formats)
     const lines = text.trim().split("\n");
+    if (lines.length < 2) return null;
 
-    // Legacy format: old single-entity save (x,y,vx,vy,angle header)
-    if (lines.length >= 2 && !lines[0].startsWith("playerUID=")) {
-        const vals = lines[1].split(",").map(Number);
-        if (vals.length >= 2 && !isNaN(vals[0]) && !isNaN(vals[1])) {
-            const uid = "player_legacy";
-            return {
-                playerUID: uid,
-                entities: [{
-                    uid,
-                    x: vals[0], y: vals[1],
-                    vx: vals[2] || 0, vy: vals[3] || 0, angle: vals[4] || 0
-                }]
-            };
+    // Multi-entity CSV: first line is "playerUID=<uid>"
+    if (lines[0].startsWith("playerUID=")) {
+        const playerUID = lines[0].replace("playerUID=", "");
+        const entities = [];
+        for (let i = 2; i < lines.length; i++) {
+            const parts = lines[i].split(",");
+            if (parts.length < 6) continue;
+            entities.push({
+                uid:       parts[0],
+                x:         Number(parts[1]),
+                y:         Number(parts[2]),
+                vx:        Number(parts[3]),
+                vy:        Number(parts[4]),
+                angle:     Number(parts[5]),
+                blockData: {},
+                blockMap:  {}
+            });
         }
-        return null;
+        return entities.length ? { playerUID, entities } : null;
     }
 
-    if (lines.length < 3) return null;
-
-    const playerUID = lines[0].replace("playerUID=", "");
-    // lines[1] is the header; entity rows start at index 2
-    const entities = [];
-    for (let i = 2; i < lines.length; i++) {
-        const parts = lines[i].split(",");
-        if (parts.length < 6) continue;
-        entities.push({
-            uid:   parts[0],
-            x:     Number(parts[1]),
-            y:     Number(parts[2]),
-            vx:    Number(parts[3]),
-            vy:    Number(parts[4]),
-            angle: Number(parts[5])
-        });
+    // Oldest single-entity CSV: header row then data row
+    const vals = lines[1].split(",").map(Number);
+    if (vals.length >= 2 && !isNaN(vals[0])) {
+        const uid = "player_legacy";
+        return {
+            playerUID: uid,
+            entities: [{
+                uid,
+                x: vals[0], y: vals[1],
+                vx: vals[2] || 0, vy: vals[3] || 0, angle: vals[4] || 0,
+                blockData: {}, blockMap: {}
+            }]
+        };
     }
-    if (entities.length === 0) return null;
-    return { playerUID, entities };
+
+    return null;
 }
 
 // ---- Public: load / save ------------------------------------------
 async function driveLoad() {
     if (!accessToken) return null;
     try {
-        const fileId = await findSaveFile();
-        if (!fileId) return null;
+        const found = await findSaveFile();
+        if (!found) return null;
         const r = await fetch(
-            "https://www.googleapis.com/drive/v3/files/" + fileId + "?alt=media",
+            "https://www.googleapis.com/drive/v3/files/" + found.id + "?alt=media",
             { headers: { Authorization: "Bearer " + accessToken } }
         );
         if (!r.ok) return null;
-        return parseSave(await r.text());
+        return parseSave(await r.text(), found.legacy);
     } catch (e) {
         console.warn("Drive load error:", e);
         return null;
@@ -167,18 +213,23 @@ async function driveSave(keepalive = false) {
 
     setDriveStatus("saving");
     const { playerUID, entities } = driveCallbacks.getState();
-    const content = formatSave(playerUID, entities);
+    const content     = formatSave(playerUID, entities);
+    const contentType = "application/json";
 
     try {
         const parent = await getOrCreateFolder();
-        const fileId = await findSaveFile();
+        const found  = await findSaveFile();
 
-        if (fileId) {
+        // If only a legacy CSV exists, create the new JSON file fresh
+        // (leave the old CSV in place; user can delete manually)
+        const existingJsonId = (found && !found.legacy) ? found.id : null;
+
+        if (existingJsonId) {
             await fetch(
-                "https://www.googleapis.com/upload/drive/v3/files/" + fileId + "?uploadType=media",
+                "https://www.googleapis.com/upload/drive/v3/files/" + existingJsonId + "?uploadType=media",
                 {
                     method: "PATCH",
-                    headers: { Authorization: "Bearer " + accessToken, "Content-Type": "text/csv" },
+                    headers: { Authorization: "Bearer " + accessToken, "Content-Type": contentType },
                     body: content,
                     keepalive
                 }
@@ -192,7 +243,7 @@ async function driveSave(keepalive = false) {
                 "",
                 metadata,
                 "--" + boundary,
-                "Content-Type: text/csv",
+                "Content-Type: " + contentType,
                 "",
                 content,
                 "--" + boundary + "--"

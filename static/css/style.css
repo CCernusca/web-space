@@ -31,10 +31,21 @@ body {
     overflow: hidden;
 }
 
+/* Block tile canvas — fills the world, sits below entity divs */
+#world-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    pointer-events: none;
+}
+
 /* --- Entities (dynamically created by main.js) --- */
 .entity {
     position: absolute;
     transform: translate(-50%, -50%);
+    z-index: 2;
 }
 
 /* Non-player entities: simple glowing circle */

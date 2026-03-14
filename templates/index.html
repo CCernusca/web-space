@@ -11,7 +11,9 @@
 <body>
     <div id="game-container">
         <div id="world">
-            <!-- entity elements are created dynamically by main.js -->
+            <!-- Block tiles are drawn on this canvas (below entity divs) -->
+            <canvas id="world-canvas"></canvas>
+            <!-- Entity divs are created dynamically by main.js -->
         </div>
 
         <div id="hud">
@@ -46,6 +48,7 @@
     </div>
 
     <script src="{{ url_for('static', filename='js/drive.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/tiles.js') }}"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
