@@ -293,7 +293,9 @@ function setDriveStatus(state) {
             el.innerHTML = 'Drive: <span class="drive-saving">Saving…</span>';
             break;
         case "reconnecting":
-            el.innerHTML = 'Drive: <span class="drive-saving">Reconnecting…</span>';
+            el.innerHTML = 'Drive: <span class="drive-saving">Reconnecting…</span>'
+                + ' <button id="btn-drive-cancel" class="drive-unlink-btn">Cancel</button>';
+            document.getElementById("btn-drive-cancel").addEventListener("click", driveUnlink);
             break;
         default:
             el.innerHTML = '<button id="btn-drive-link" class="drive-link-btn">Link Google Drive</button>';
@@ -328,6 +330,9 @@ function setupTokenClient() {
         scope: DRIVE_SCOPE,
         callback: async function (resp) {
             if (resp.error) { console.error("OAuth error:", resp.error); return; }
+            // If the user cancelled reconnection while the GSI request was in-flight,
+            // consent will have been set to "false" — discard this late token.
+            if (localStorage.getItem("ws_driveConsent") === "false") return;
             storeToken(resp.access_token, resp.expires_in);
             localStorage.setItem("ws_driveConsent", "true");
             setDriveStatus("linked");
