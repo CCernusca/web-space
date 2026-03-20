@@ -537,9 +537,13 @@
         if (keys.length === 0) return [];
 
         // ---- BFS flood-fill – find connected components (4-adjacent) ----
+        // Only consider tiles whose bui still exists in blockData.
+        const liveKeys = keys.filter(k => entity.blockData[entity.blockMap[k]] !== undefined);
+        if (liveKeys.length === 0) return [];
+
         const visited = new Set();
         const groups  = [];
-        for (const startKey of keys) {
+        for (const startKey of liveKeys) {
             if (visited.has(startKey)) continue;
             const group = [];
             const queue = [startKey];
@@ -550,7 +554,9 @@
                 const [tx, ty] = key.split(",").map(Number);
                 for (const [nx, ny] of [[tx-1,ty],[tx+1,ty],[tx,ty-1],[tx,ty+1]]) {
                     const nk = nx + "," + ny;
-                    if (!visited.has(nk) && entity.blockMap[nk] !== undefined) {
+                    if (!visited.has(nk) &&
+                        entity.blockMap[nk] !== undefined &&
+                        entity.blockData[entity.blockMap[nk]] !== undefined) {
                         visited.add(nk);
                         queue.push(nk);
                     }
@@ -625,6 +631,7 @@
             }
             const blockData = {};
             for (const bui of buiSet) {
+                if (entity.blockData[bui] === undefined) continue;
                 blockData[bui] = JSON.parse(JSON.stringify(entity.blockData[bui]));
             }
             return { blockMap, blockData };
