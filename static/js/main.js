@@ -8,8 +8,8 @@
     const ANG_DAMP       = 1.0;    // angular velocity damping factor per frame (1.0 = no drag)
     const ATTRACT_RADIUS = 200;   // max distance at which attraction acts (px)
     const ATTRACT_STRENGTH = 0.4; // acceleration at ATTRACT_RADIUS distance
-    const WORLD_W    = 10000;     // game world width  (px)
-    const WORLD_H    = 10000;     // game world height (px)
+    const WORLD_W    = 1000;      // game world width  (px)
+    const WORLD_H    = 1000;      // game world height (px)
     const EXPLOSION_STRENGTH      = 5000;   // default explosion strength (range = sqrt of this)
     const EXPLOSION_RAYS          = 360;   // number of raycasted directions
     const EXPLOSION_EXPAND_SPEED  = 0.5;  // fireball expansion speed (px/ms) — same for all strengths
