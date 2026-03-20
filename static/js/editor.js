@@ -17,9 +17,12 @@
 (function () {
     "use strict";
 
-    const EDITOR_TILE = 16;           // px per tile in the editor grid
     const GRID_HALF   = 27;           // tiles from centre to edge  →  55×55 grid
     const GRID_SIZE   = GRID_HALF * 2 + 1; // total columns = rows
+
+    function getTileSize() {
+        return Math.floor(window.innerHeight / GRID_SIZE);
+    }
 
     // Working copies — isolated from the live entity until Save is clicked
     let workingEntity  = null;  // { blockData: {…}, blockMap: {…} }
@@ -102,9 +105,6 @@
 
         canvas = document.getElementById("editor-canvas");
         ctx    = canvas.getContext("2d");
-        const px = GRID_SIZE * EDITOR_TILE;
-        canvas.width  = px;
-        canvas.height = px;
 
         render();
     }
@@ -159,9 +159,12 @@
     function render() {
         if (!canvas || !ctx || !registry) return;
 
-        const TS = EDITOR_TILE;
+        const TS = getTileSize();
         const N  = GRID_SIZE;
-        ctx.clearRect(0, 0, N * TS, N * TS);
+        const px = N * TS;
+        canvas.width  = px;
+        canvas.height = px;
+        ctx.clearRect(0, 0, px, px);
 
         // Background cells
         for (let row = 0; row < N; row++) {
@@ -367,9 +370,10 @@
         const rect = canvas.getBoundingClientRect();
         const scaleX = canvas.width  / rect.width;
         const scaleY = canvas.height / rect.height;
+        const TS     = getTileSize();
         return {
-            col: Math.floor((e.clientX - rect.left)  * scaleX / EDITOR_TILE),
-            row: Math.floor((e.clientY - rect.top)   * scaleY / EDITOR_TILE)
+            col: Math.floor((e.clientX - rect.left)  * scaleX / TS),
+            row: Math.floor((e.clientY - rect.top)   * scaleY / TS)
         };
     }
 
@@ -523,6 +527,10 @@
             .addEventListener("click", save);
         document.getElementById("btn-editor-move")
             .addEventListener("click", toggleMoveMode);
+
+        window.addEventListener("resize", function () {
+            if (canvas) render();
+        });
     });
 
     window.editor = { open, close };
