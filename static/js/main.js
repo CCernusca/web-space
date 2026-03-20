@@ -362,9 +362,18 @@
 
                     const blockHealth = entity.blockData[bui].health ?? 0;
 
-                    // Push the block outward proportional to current ray strength
+                    // Apply impulse at the block's world-space center so the torque
+                    // arm is from the entity CoM to the hit block — not the ray sample
+                    // point, which can be collinear with the impulse (r × F = 0).
+                    const ecos  = Math.cos(entity.angle);
+                    const esin  = Math.sin(entity.angle);
+                    const blx   = tx * tiles.TILE_SIZE - (entity.comOffsetX || 0);
+                    const bly   = ty * tiles.TILE_SIZE - (entity.comOffsetY || 0);
+                    const impWx = entity.x + blx * ecos - bly * esin;
+                    const impWy = entity.y + blx * esin + bly * ecos;
+
                     const impulseMag = currentStrength * EXPLOSION_IMPULSE_SCALE;
-                    tiles.applyImpulse(entity, rdx * impulseMag, rdy * impulseMag, px, py);
+                    tiles.applyImpulse(entity, rdx * impulseMag, rdy * impulseMag, impWx, impWy);
 
                     if (blockHealth < currentStrength) {
                         // Block destroyed — ray continues with reduced strength
