@@ -17,7 +17,7 @@
 (function () {
     "use strict";
 
-    const GRID_HALF   = 27;           // tiles from centre to edge  →  55×55 grid
+    const GRID_HALF   = 16;           // tiles from centre to edge  →  33×33 grid
     const GRID_SIZE   = GRID_HALF * 2 + 1; // total columns = rows
 
     function getTileSize() {
