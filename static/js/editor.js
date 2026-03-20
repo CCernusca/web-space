@@ -158,6 +158,28 @@
             ctx.fillRect(x + 1, y + 1, TS - 2, TS - 2);
         }
 
+        // Red-cross overlay on disconnected blocks
+        const discBuis = getDisconnectedBuis();
+        if (discBuis.size > 0) {
+            ctx.save();
+            for (const [posKey, bui] of Object.entries(workingEntity.blockMap)) {
+                if (!discBuis.has(bui)) continue;
+                const [tx, ty] = posKey.split(",").map(Number);
+                const { col, row } = tileToGrid(tx, ty);
+                if (!inBounds(col, row)) continue;
+                const x = col * TS, y = row * TS;
+                ctx.fillStyle = "rgba(200,0,0,0.35)";
+                ctx.fillRect(x + 1, y + 1, TS - 2, TS - 2);
+                ctx.strokeStyle = "rgba(255,80,80,0.9)";
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x + 4, y + 4);       ctx.lineTo(x + TS - 4, y + TS - 4);
+                ctx.moveTo(x + TS - 4, y + 4);  ctx.lineTo(x + 4, y + TS - 4);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
         // Hover preview
         if (hoverCol !== null && selectedTypeId && registry[selectedTypeId]) {
             const type = registry[selectedTypeId];
@@ -229,6 +251,31 @@
             if (workingEntity.blockMap[key] === bui) delete workingEntity.blockMap[key];
     }
 
+    // BFS from tile (0,0) through occupied tiles; returns the set of BUIs whose
+    // tiles are NOT reachable — i.e. disconnected from the origin.
+    function getDisconnectedBuis() {
+        const connected = new Set();
+        const queue = [];
+        if (workingEntity.blockMap["0,0"] !== undefined) {
+            connected.add("0,0");
+            queue.push([0, 0]);
+        }
+        while (queue.length > 0) {
+            const [tx, ty] = queue.shift();
+            for (const [nx, ny] of [[tx-1,ty],[tx+1,ty],[tx,ty-1],[tx,ty+1]]) {
+                const key = nx + "," + ny;
+                if (!connected.has(key) && workingEntity.blockMap[key] !== undefined) {
+                    connected.add(key);
+                    queue.push([nx, ny]);
+                }
+            }
+        }
+        const disc = new Set();
+        for (const [posKey, bui] of Object.entries(workingEntity.blockMap))
+            if (!connected.has(posKey)) disc.add(bui);
+        return disc;
+    }
+
     // A block covering (tx..tx+w-1, ty..ty+h-1) may be placed if any of its cells
     // is the origin (0,0) or 4-adjacent to an already-occupied tile.
     function isConnected(tx, ty, w, h) {
@@ -290,6 +337,12 @@
     }
 
     function save() {
+        // Cascade-remove disconnected blocks until the design is fully connected
+        let disc = getDisconnectedBuis();
+        while (disc.size > 0) {
+            for (const bui of disc) editorEraseBlock(bui);
+            disc = getDisconnectedBuis();
+        }
         if (onSaveCb) onSaveCb(workingEntity.blockData, workingEntity.blockMap);
         close();
     }
