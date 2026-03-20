@@ -209,12 +209,13 @@
         const anchors = _blockAnchors(entity);
 
         // Interaction radius: check all 4 corners of every tile cell
+        // Tile (tx,ty) center is at (tx*TS, ty*TS); corners are at ±0.5*TS
         for (const posKey of Object.keys(entity.blockMap)) {
             const [tx, ty] = posKey.split(",").map(Number);
             for (let cx = tx; cx <= tx + 1; cx++) {
                 for (let cy = ty; cy <= ty + 1; cy++) {
-                    const lx = cx * TILE_SIZE;
-                    const ly = cy * TILE_SIZE;
+                    const lx = (cx - 0.5) * TILE_SIZE;
+                    const ly = (cy - 0.5) * TILE_SIZE;
                     const dSq = lx * lx + ly * ly;
                     if (dSq > maxRadiusSq) maxRadiusSq = dSq;
                 }
@@ -234,9 +235,9 @@
             const anchor = anchors[bui];
             if (!anchor) continue;
 
-            // Block center in entity-local space
-            const bcx = (anchor.tx + w / 2) * TILE_SIZE;
-            const bcy = (anchor.ty + h / 2) * TILE_SIZE;
+            // Block center in entity-local space (tile center = tx*TS, ty*TS)
+            const bcx = (anchor.tx + (w - 1) / 2) * TILE_SIZE;
+            const bcy = (anchor.ty + (h - 1) / 2) * TILE_SIZE;
 
             // Rectangle moment of inertia about its own center
             const Iself = m * ((w * TILE_SIZE) ** 2 + (h * TILE_SIZE) ** 2) / 12;
@@ -289,12 +290,12 @@
         const cos = Math.cos(entity.angle);
         const sin = Math.sin(entity.angle);
         const ex  = entity.x, ey = entity.y;
-        // Local corners (top-left, top-right, bottom-right, bottom-left)
+        // Local corners; tile center is at (tx*TS, ty*TS), corners offset by ±0.5*TS
         return [
-            [tx * TS,       ty * TS      ],
-            [(tx + 1) * TS, ty * TS      ],
-            [(tx + 1) * TS, (ty + 1) * TS],
-            [tx * TS,       (ty + 1) * TS]
+            [(tx - 0.5) * TS, (ty - 0.5) * TS],
+            [(tx + 0.5) * TS, (ty - 0.5) * TS],
+            [(tx + 0.5) * TS, (ty + 0.5) * TS],
+            [(tx - 0.5) * TS, (ty + 0.5) * TS]
         ].map(function ([lx, ly]) {
             return [ex + lx * cos - ly * sin,
                     ey + lx * sin + ly * cos];
@@ -303,8 +304,8 @@
 
     // Return the world-space center of a tile at (tx, ty) belonging to entity.
     function _tileWorldCenter(tx, ty, entity) {
-        const lx  = (tx + 0.5) * TILE_SIZE;
-        const ly  = (ty + 0.5) * TILE_SIZE;
+        const lx  = tx * TILE_SIZE;
+        const ly  = ty * TILE_SIZE;
         const cos = Math.cos(entity.angle);
         const sin = Math.sin(entity.angle);
         return [entity.x + lx * cos - ly * sin,
@@ -497,8 +498,8 @@
                 const { r, g, b } = type.properties.color;
                 ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
                 ctx.fillRect(
-                    Number(tx) * TILE_SIZE,
-                    Number(ty) * TILE_SIZE,
+                    (Number(tx) - 0.5) * TILE_SIZE,
+                    (Number(ty) - 0.5) * TILE_SIZE,
                     TILE_SIZE,
                     TILE_SIZE
                 );
