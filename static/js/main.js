@@ -229,16 +229,21 @@
                 }
             }
 
-            // Split entities whose blocks became disconnected this frame
+            // Split entities whose blocks became disconnected this frame.
+            // Track resulting pieces per original entity for impulse distribution.
+            const splitPieces = new Map(); // originalEntity → [piece, ...]
             for (const [, e] of entities) {
                 if (!e._pendingSplit) continue;
                 delete e._pendingSplit;
+                const pieces = [e];
                 const newSpecs = tiles.splitIfDisconnected(e);
                 for (const spec of newSpecs) {
                     const newUid = "entity_" + Math.random().toString(36).slice(2, 9);
                     spec.uid = newUid;
                     entities.set(newUid, spec);
+                    pieces.push(spec);
                 }
+                splitPieces.set(e, pieces);
             }
 
             // Apply deferred explosion impulses now that splits are resolved.
@@ -257,11 +262,15 @@
                 if (owner) {
                     tiles.applyImpulse(owner, ix, iy, hit.blockWx, hit.blockWy);
                 } else {
-                    // Block was destroyed: distribute impulse by inverse distance
-                    // so nearby split pieces absorb more than distant ones.
+                    // Block was destroyed: distribute among the pieces that
+                    // resulted from splitting the original entity, weighted by
+                    // inverse distance so closer pieces absorb proportionally more.
+                    const pieces = splitPieces.get(hit.entity) || (
+                        entities.has(hit.entity.uid) ? [hit.entity] : []
+                    );
                     let totalWeight = 0;
                     const weighted = [];
-                    for (const e of entities.values()) {
+                    for (const e of pieces) {
                         const dist = Math.hypot(e.x - hit.blockWx, e.y - hit.blockWy);
                         const w = 1 / Math.max(dist, 1);
                         weighted.push({ e, w });
@@ -406,7 +415,7 @@
                     const blockWx = entity.x + blx * ecos - bly * esin;
                     const blockWy = entity.y + blx * esin + bly * ecos;
                     const impulseMag = currentStrength * EXPLOSION_IMPULSE_SCALE;
-                    pendingExplosionImpulses.push({ bui, blockWx, blockWy, rdx, rdy, impulseMag });
+                    pendingExplosionImpulses.push({ entity, bui, blockWx, blockWy, rdx, rdy, impulseMag });
 
                     if (blockHealth < currentStrength) {
                         // Block destroyed — ray continues with reduced strength
