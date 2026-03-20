@@ -114,7 +114,7 @@
             _removeBlock(entity, bui);
         }
 
-        computeEntityProps(entity);
+        applyDesignChange(entity);
     }
 
     // =========================================================================
@@ -227,15 +227,8 @@
         }
         if (blockMassSum > 0) { newComOX /= blockMassSum; newComOY /= blockMassSum; }
 
-        // Shift entity world position by the delta in CoM offset
-        const dox = newComOX - (entity.comOffsetX || 0);
-        const doy = newComOY - (entity.comOffsetY || 0);
-        if ((Math.abs(dox) > 1e-9 || Math.abs(doy) > 1e-9) && entity.x !== undefined) {
-            const cos = Math.cos(entity.angle || 0);
-            const sin = Math.sin(entity.angle || 0);
-            entity.x += dox * cos - doy * sin;
-            entity.y += dox * sin + doy * cos;
-        }
+        // Store new CoM offset (position shift is NOT applied here — call
+        // applyDesignChange() instead when the block layout has intentionally changed).
         entity.comOffsetX = newComOX;
         entity.comOffsetY = newComOY;
 
@@ -274,6 +267,23 @@
         entity.mass              = totalMass;
         entity.interactionRadius = Math.sqrt(maxRadiusSq);
         entity.momentOfInertia   = Math.max(moi, 1);
+    }
+
+    // Call this (instead of computeEntityProps) whenever the block layout has
+    // intentionally changed (editor save, Drive load/migration).
+    // Shifts entity.x/y so it tracks the new CoM, then calls computeEntityProps.
+    function applyDesignChange(entity) {
+        const prevOX = entity.comOffsetX || 0;
+        const prevOY = entity.comOffsetY || 0;
+        computeEntityProps(entity);
+        const dox = entity.comOffsetX - prevOX;
+        const doy = entity.comOffsetY - prevOY;
+        if ((Math.abs(dox) > 1e-9 || Math.abs(doy) > 1e-9) && entity.x !== undefined) {
+            const cos = Math.cos(entity.angle || 0);
+            const sin = Math.sin(entity.angle || 0);
+            entity.x += dox * cos - doy * sin;
+            entity.y += dox * sin + doy * cos;
+        }
     }
 
     // =========================================================================
@@ -559,6 +569,7 @@
         addBlock,
         removeBlock,
         computeEntityProps,
+        applyDesignChange,
         // Rendering
         renderBlocks,
         // Collision

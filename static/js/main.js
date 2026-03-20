@@ -67,8 +67,9 @@
         // Load block registry before starting (fast: localStorage hit, or one fetch)
         await tiles.initRegistry();
 
-        // Now that registry is available, compute physics props for all entities
-        for (const e of entities.values()) tiles.computeEntityProps(e);
+        // Now that registry is available, compute physics props for all entities.
+        // applyDesignChange also shifts entity.x/y to the CoM (migration for old saves).
+        for (const e of entities.values()) tiles.applyDesignChange(e);
 
         renderEntities();
         updateHUD();
@@ -129,7 +130,7 @@
             editor.open(player, tiles.getRegistry(), function (newBlockData, newBlockMap) {
                 player.blockData = newBlockData;
                 player.blockMap  = newBlockMap;
-                tiles.computeEntityProps(player);
+                tiles.applyDesignChange(player);
                 editorOpen = false;
             });
         });
