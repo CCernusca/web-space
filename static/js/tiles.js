@@ -142,6 +142,7 @@
         if (datum.health <= 0) {
             _removeBlock(entity, bui);
             computeEntityProps(entity);
+            entity._pendingSplit = true;
         }
     }
 
@@ -519,6 +520,153 @@
     }
 
     // =========================================================================
+    // Connectivity split
+    // =========================================================================
+
+    // After a block is destroyed, check whether the remaining blocks are still
+    // all 4-adjacent-connected.  If they split into two or more components:
+    //   • The component whose CoM is closest to the entity's current world
+    //     position stays as the original entity (uid preserved).
+    //   • Every other component is returned as a new plain entity-like object
+    //     with fully computed physics (blockData, blockMap, x, y, vx, vy,
+    //     angle, angularVelocity, comOffsetX, comOffsetY, mass,
+    //     interactionRadius, momentOfInertia).
+    // Returns [] when the entity is still fully connected (common case).
+    function splitIfDisconnected(entity) {
+        const keys = Object.keys(entity.blockMap);
+        if (keys.length === 0) return [];
+
+        // ---- BFS flood-fill – find connected components (4-adjacent) ----
+        const visited = new Set();
+        const groups  = [];
+        for (const startKey of keys) {
+            if (visited.has(startKey)) continue;
+            const group = [];
+            const queue = [startKey];
+            visited.add(startKey);
+            while (queue.length > 0) {
+                const key = queue.shift();
+                group.push(key);
+                const [tx, ty] = key.split(",").map(Number);
+                for (const [nx, ny] of [[tx-1,ty],[tx+1,ty],[tx,ty-1],[tx,ty+1]]) {
+                    const nk = nx + "," + ny;
+                    if (!visited.has(nk) && entity.blockMap[nk] !== undefined) {
+                        visited.add(nk);
+                        queue.push(nk);
+                    }
+                }
+            }
+            groups.push(group);
+        }
+        if (groups.length <= 1) return [];
+
+        // ---- Snapshot entity state before any modifications ----
+        const oldX  = entity.x;
+        const oldY  = entity.y;
+        const oldOX = entity.comOffsetX || 0;
+        const oldOY = entity.comOffsetY || 0;
+        const cos   = Math.cos(entity.angle || 0);
+        const sin   = Math.sin(entity.angle || 0);
+
+        // Compute mass-weighted local CoM for a set of tile keys.
+        // Uses the same anchor logic as _blockAnchors / computeEntityProps.
+        function groupLocalCoM(tileKeys) {
+            const buiAnchor = {};
+            for (const key of tileKeys) {
+                const bui = entity.blockMap[key];
+                const [tx, ty] = key.split(",").map(Number);
+                if (!buiAnchor[bui]) {
+                    buiAnchor[bui] = { tx, ty };
+                } else {
+                    if (tx < buiAnchor[bui].tx) buiAnchor[bui].tx = tx;
+                    if (ty < buiAnchor[bui].ty) buiAnchor[bui].ty = ty;
+                }
+            }
+            let cx = 0, cy = 0, massSum = 0;
+            for (const [bui, anchor] of Object.entries(buiAnchor)) {
+                const datum = entity.blockData[bui];
+                if (!datum) continue;
+                const type = registry[datum.typeId];
+                if (!type) continue;
+                const m = type.properties.mass || 0;
+                const { x: w, y: h } = type.properties.size;
+                cx += m * (anchor.tx + (w - 1) / 2) * TILE_SIZE;
+                cy += m * (anchor.ty + (h - 1) / 2) * TILE_SIZE;
+                massSum += m;
+            }
+            if (massSum > 0) { cx /= massSum; cy /= massSum; }
+            return { lcx: cx, lcy: cy };
+        }
+
+        // World CoM for each group (relative to oldX/oldY via old comOffset)
+        const groupCoMs = groups.map(tileKeys => {
+            const { lcx, lcy } = groupLocalCoM(tileKeys);
+            const dx = lcx - oldOX;
+            const dy = lcy - oldOY;
+            return { worldX: oldX + cos * dx - sin * dy,
+                     worldY: oldY + sin * dx + cos * dy };
+        });
+
+        // ---- Pick group closest to the old world CoM ----
+        let closestIdx  = 0;
+        let closestDist = Infinity;
+        for (let i = 0; i < groups.length; i++) {
+            const d = Math.hypot(groupCoMs[i].worldX - oldX, groupCoMs[i].worldY - oldY);
+            if (d < closestDist) { closestDist = d; closestIdx = i; }
+        }
+
+        // Extract blockData + blockMap for a set of tile keys
+        function extractBlocks(tileKeys) {
+            const blockMap = {};
+            const buiSet   = new Set();
+            for (const key of tileKeys) {
+                blockMap[key] = entity.blockMap[key];
+                buiSet.add(entity.blockMap[key]);
+            }
+            const blockData = {};
+            for (const bui of buiSet) {
+                blockData[bui] = JSON.parse(JSON.stringify(entity.blockData[bui]));
+            }
+            return { blockMap, blockData };
+        }
+
+        // ---- Keep closest group as original entity ----
+        const kept = extractBlocks(groups[closestIdx]);
+        entity.blockData = kept.blockData;
+        entity.blockMap  = kept.blockMap;
+        applyDesignChange(entity);
+
+        // ---- Build new entity specs for every other group ----
+        const newEntities = [];
+        for (let i = 0; i < groups.length; i++) {
+            if (i === closestIdx) continue;
+            const { blockMap, blockData } = extractBlocks(groups[i]);
+            const { worldX, worldY }      = groupCoMs[i];
+            // Rigid-body velocity at this CoM: v = v_CoM + ω × r
+            const rdx = worldX - oldX;
+            const rdy = worldY - oldY;
+            const spec = {
+                blockData,
+                blockMap,
+                x:               worldX,
+                y:               worldY,
+                vx:              entity.vx - entity.angularVelocity * rdy,
+                vy:              entity.vy + entity.angularVelocity * rdx,
+                angle:           entity.angle,
+                angularVelocity: entity.angularVelocity,
+                comOffsetX:      0,
+                comOffsetY:      0,
+                mass:            1,
+                interactionRadius: 0,
+                momentOfInertia: 1,
+            };
+            computeEntityProps(spec);
+            newEntities.push(spec);
+        }
+        return newEntities;
+    }
+
+    // =========================================================================
     // Rendering
     // =========================================================================
 
@@ -594,6 +742,7 @@
         removeBlock,
         computeEntityProps,
         applyDesignChange,
+        splitIfDisconnected,
         // Rendering
         renderBlocks,
         // Collision

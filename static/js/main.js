@@ -219,6 +219,18 @@
                     entities.delete(uid);
                 }
             }
+
+            // Split entities whose blocks became disconnected this frame
+            for (const [, e] of entities) {
+                if (!e._pendingSplit) continue;
+                delete e._pendingSplit;
+                const newSpecs = tiles.splitIfDisconnected(e);
+                for (const spec of newSpecs) {
+                    const newUid = "entity_" + Math.random().toString(36).slice(2, 9);
+                    spec.uid = newUid;
+                    entities.set(newUid, spec);
+                }
+            }
         }
         tiles.renderBlocks(canvasEl, entities);
         renderEntities();
