@@ -637,17 +637,19 @@
             return { blockMap, blockData };
         }
 
+        // ---- Extract all groups before modifying the entity ----
+        const allExtracted = groups.map(g => extractBlocks(g));
+
         // ---- Keep closest group as original entity ----
-        const kept = extractBlocks(groups[closestIdx]);
-        entity.blockData = kept.blockData;
-        entity.blockMap  = kept.blockMap;
+        entity.blockData = allExtracted[closestIdx].blockData;
+        entity.blockMap  = allExtracted[closestIdx].blockMap;
         applyDesignChange(entity);
 
         // ---- Build new entity specs for every other group ----
         const newEntities = [];
         for (let i = 0; i < groups.length; i++) {
             if (i === closestIdx) continue;
-            const { blockMap, blockData } = extractBlocks(groups[i]);
+            const { blockMap, blockData } = allExtracted[i];
             const { worldX, worldY }      = groupCoMs[i];
             // Rigid-body velocity at this CoM: v = v_CoM + ω × r
             const rdx = worldX - oldX;
