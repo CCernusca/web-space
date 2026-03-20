@@ -10,10 +10,10 @@
     const ATTRACT_STRENGTH = 0.4; // acceleration at ATTRACT_RADIUS distance
     const WORLD_W    = 500;       // game world width  (px)
     const WORLD_H    = 500;       // game world height (px)
-    const EXPLOSION_STRENGTH      = 500;   // default explosion strength (range = sqrt of this)
+    const EXPLOSION_STRENGTH      = 5000;   // default explosion strength (range = sqrt of this)
     const EXPLOSION_RAYS          = 360;   // number of raycasted directions
     const EXPLOSION_EXPAND_SPEED  = 0.5;  // fireball expansion speed (px/ms) — same for all strengths
-    const EXPLOSION_IMPULSE_SCALE = 0.003; // impulse per unit of ray strength at impact
+    const EXPLOSION_IMPULSE_SCALE = 0.1; // impulse per unit of ray strength at impact
 
     // --- Entity store ---
     // Each entity: { uid, x, y, vx, vy, angle, angularVelocity,
