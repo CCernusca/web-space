@@ -247,12 +247,35 @@
     }
 
     function setupWorldMouse() {
-        // Right-click: spawn a new entity at cursor position
+        // Right-click: delete entity under cursor, or spawn a new one if none
         worldEl.addEventListener("contextmenu", function (e) {
             e.preventDefault();
             if (editorOpen) return;
             const pos = worldPosFromMouseEvent(e);
             if (!isInsideWorld(pos)) return;
+
+            // Check if cursor is over an existing entity
+            let hit = null;
+            let hitDist = Infinity;
+            for (const [uid, ent] of entities) {
+                const dx = ent.x - pos.x;
+                const dy = ent.y - pos.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const radius = Math.max(ent.interactionRadius, 16);
+                if (dist <= radius && dist < hitDist) {
+                    hitDist = dist;
+                    hit = uid;
+                }
+            }
+
+            if (hit !== null) {
+                if (hit === playerUID) playerUID = null;
+                entities.delete(hit);
+                renderEntities();
+                updateHUD();
+                return;
+            }
+
             const uid = "entity_" + Math.random().toString(36).slice(2, 9);
             const entity = {
                 uid,
