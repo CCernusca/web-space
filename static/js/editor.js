@@ -51,6 +51,34 @@
 
     // ---- Open / close ----------------------------------------------
 
+    // Shift all blockMap entries so the design's bounding box is centred at (0,0),
+    // maximising the minimum clearance to each grid border in both axes.
+    function centerDesign() {
+        const keys = Object.keys(workingEntity.blockMap);
+        if (keys.length === 0) return;
+
+        let minTx = Infinity, maxTx = -Infinity;
+        let minTy = Infinity, maxTy = -Infinity;
+        for (const key of keys) {
+            const [tx, ty] = key.split(",").map(Number);
+            if (tx < minTx) minTx = tx;
+            if (tx > maxTx) maxTx = tx;
+            if (ty < minTy) minTy = ty;
+            if (ty > maxTy) maxTy = ty;
+        }
+
+        const dx = -Math.round((minTx + maxTx) / 2);
+        const dy = -Math.round((minTy + maxTy) / 2);
+        if (dx === 0 && dy === 0) return;
+
+        const newBlockMap = {};
+        for (const [key, bui] of Object.entries(workingEntity.blockMap)) {
+            const [tx, ty] = key.split(",").map(Number);
+            newBlockMap[(tx + dx) + "," + (ty + dy)] = bui;
+        }
+        workingEntity.blockMap = newBlockMap;
+    }
+
     function open(entity, reg, onSave, onClose) {
         registry   = reg;
         onSaveCb   = onSave;
@@ -62,6 +90,7 @@
             blockMap:  JSON.parse(JSON.stringify(entity.blockMap  || {}))
         };
 
+        centerDesign();
         buildPalette();
 
         // Select first registered type by default
