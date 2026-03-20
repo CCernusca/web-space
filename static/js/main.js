@@ -45,6 +45,7 @@
     let joystickActive = false;
     let joystickDir = { x: 0, y: 0 }; // normalised -1..1
     let attractPos  = null;            // world-space cursor pos while LMB held
+    let mobileRightClickMode = false;  // mobile toggle: taps act as right-clicks
 
     // --- DOM refs ---
     const worldEl           = document.getElementById("world");
@@ -79,6 +80,13 @@
             joystickContainer.classList.remove("hidden");
             controlHint.textContent = "Up/Down: thrust  |  Left/Right: turn";
             setupJoystick();
+            setupWorldTouch();
+            const btnRCM = document.getElementById("btn-right-click-mode");
+            btnRCM.classList.remove("hidden");
+            btnRCM.addEventListener("click", function () {
+                mobileRightClickMode = !mobileRightClickMode;
+                btnRCM.classList.toggle("active", mobileRightClickMode);
+            });
         } else {
             deviceTypeEl.innerHTML = "Device: <span>PC</span>";
             controlHint.textContent = "W/S: thrust  |  A/D: turn  |  Space: pause";
@@ -351,6 +359,110 @@
                 updateHUD();
             }
         });
+    }
+
+    // --- World touch (Mobile) ---
+    function worldPosFromTouch(touch) {
+        const rect = worldEl.getBoundingClientRect();
+        return {
+            x: touch.clientX - rect.left,
+            y: touch.clientY - rect.top
+        };
+    }
+
+    function applyRightClickAt(pos) {
+        // Mirrors the contextmenu handler: delete entity under pos, or spawn one
+        let hit = null, hitDist = Infinity;
+        for (const [uid, ent] of entities) {
+            const dx = ent.x - pos.x, dy = ent.y - pos.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const radius = Math.max(ent.interactionRadius, 16);
+            if (dist <= radius && dist < hitDist) { hitDist = dist; hit = uid; }
+        }
+        if (hit !== null) {
+            if (hit === playerUID) playerUID = null;
+            entities.delete(hit);
+            renderEntities();
+            updateHUD();
+            return;
+        }
+        const uid = "entity_" + Math.random().toString(36).slice(2, 9);
+        const entity = {
+            uid, x: pos.x, y: pos.y,
+            vx: 0, vy: 0, angle: 0, angularVelocity: 0,
+            mass: 1, interactionRadius: 0, momentOfInertia: 1,
+            blockData: {}, blockMap: {}
+        };
+        tiles.computeEntityProps(entity);
+        entities.set(uid, entity);
+        renderEntities();
+    }
+
+    function applyTakeControlAt(pos) {
+        // Mirrors Ctrl+click: take control of nearest entity within radius
+        let best = null, bestDist = Infinity;
+        for (const [uid, ent] of entities) {
+            if (uid === playerUID) continue;
+            const dx = ent.x - pos.x, dy = ent.y - pos.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const radius = Math.max(ent.interactionRadius, 16);
+            if (dist <= radius && dist < bestDist) { bestDist = dist; best = uid; }
+        }
+        if (best !== null) {
+            playerUID = best;
+            renderEntities();
+            updateHUD();
+        }
+    }
+
+    function setupWorldTouch() {
+        const DBL_TAP_MS = 300; // max ms between taps to count as double-tap
+        let lastTapTime = 0;
+        let lastTapPos  = null;
+
+        worldEl.addEventListener("touchstart", function (e) {
+            if (editorOpen || e.touches.length !== 1) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            const pos   = worldPosFromTouch(touch);
+            if (!isInsideWorld(pos)) return;
+
+            const now = Date.now();
+            const isDoubleTap = lastTapPos &&
+                (now - lastTapTime) < DBL_TAP_MS &&
+                Math.hypot(pos.x - lastTapPos.x, pos.y - lastTapPos.y) < 30;
+
+            if (isDoubleTap) {
+                lastTapTime = 0;
+                lastTapPos  = null;
+                applyTakeControlAt(pos);
+                return;
+            }
+
+            lastTapTime = now;
+            lastTapPos  = pos;
+
+            if (mobileRightClickMode) {
+                applyRightClickAt(pos);
+            } else {
+                attractPos = pos;
+            }
+        }, { passive: false });
+
+        worldEl.addEventListener("touchmove", function (e) {
+            if (!attractPos || e.touches.length !== 1) return;
+            e.preventDefault();
+            const pos = worldPosFromTouch(e.touches[0]);
+            attractPos = isInsideWorld(pos) ? pos : null;
+        }, { passive: false });
+
+        worldEl.addEventListener("touchend", function () {
+            attractPos = null;
+        }, { passive: false });
+
+        worldEl.addEventListener("touchcancel", function () {
+            attractPos = null;
+        }, { passive: false });
     }
 
     // --- Keyboard (PC) ---
