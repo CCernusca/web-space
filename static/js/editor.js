@@ -254,14 +254,15 @@
             if (workingEntity.blockMap[key] === bui) delete workingEntity.blockMap[key];
     }
 
-    // BFS from tile (0,0) through occupied tiles; returns the set of BUIs whose
-    // tiles are NOT reachable — i.e. disconnected from the origin.
+    // BFS from an arbitrary occupied tile; returns BUIs not reachable from it
+    // (i.e. disconnected from the main body — no longer requires origin at 0,0).
     function getDisconnectedBuis() {
         const connected = new Set();
         const queue = [];
-        if (workingEntity.blockMap["0,0"] !== undefined) {
-            connected.add("0,0");
-            queue.push([0, 0]);
+        const seed = Object.keys(workingEntity.blockMap)[0];
+        if (seed !== undefined) {
+            connected.add(seed);
+            queue.push(seed.split(",").map(Number));
         }
         while (queue.length > 0) {
             const [tx, ty] = queue.shift();
@@ -279,13 +280,14 @@
         return disc;
     }
 
-    // A block covering (tx..tx+w-1, ty..ty+h-1) may be placed if any of its cells
-    // is the origin (0,0) or 4-adjacent to an already-occupied tile.
+    // A block covering (tx..tx+w-1, ty..ty+h-1) may be placed if the grid is
+    // empty (first block anywhere) or any of its cells is 4-adjacent to an
+    // already-occupied tile.
     function isConnected(tx, ty, w, h) {
+        if (Object.keys(workingEntity.blockMap).length === 0) return true;
         for (let dy = 0; dy < h; dy++) {
             for (let dx = 0; dx < w; dx++) {
                 const cx = tx + dx, cy = ty + dy;
-                if (cx === 0 && cy === 0) return true;
                 if (workingEntity.blockMap[(cx - 1) + "," + cy]  !== undefined) return true;
                 if (workingEntity.blockMap[(cx + 1) + "," + cy]  !== undefined) return true;
                 if (workingEntity.blockMap[cx + "," + (cy - 1)]  !== undefined) return true;
