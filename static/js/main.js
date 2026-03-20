@@ -6,6 +6,8 @@
     const THRUST     = 0.25;      // force per frame when W/S held
     const TURN_SPEED = 0.055;     // radians per frame when A/D held
     const ANG_DAMP   = 0.99;      // angular velocity damping factor per frame
+    const WORLD_W    = 500;       // game world width  (px)
+    const WORLD_H    = 500;       // game world height (px)
 
     // --- Entity store ---
     // Each entity: { uid, x, y, vx, vy, angle, angularVelocity,
@@ -19,8 +21,8 @@
     // Bootstrap the initial player entity at screen centre
     entities.set(playerUID, {
         uid:             playerUID,
-        x:               window.innerWidth  / 2,
-        y:               window.innerHeight / 2,
+        x:               WORLD_W / 2,
+        y:               WORLD_H / 2,
         vx:              0,
         vy:              0,
         angle:           0,
@@ -140,8 +142,8 @@
     function updateHUD() {
         const e = entities.get(playerUID);
         if (!e) return;
-        posXEl.textContent = Math.round(e.x - window.innerWidth  / 2);
-        posYEl.textContent = Math.round(e.y - window.innerHeight / 2);
+        posXEl.textContent = Math.round(e.x - WORLD_W / 2);
+        posYEl.textContent = Math.round(e.y - WORLD_H / 2);
     }
 
     // --- Game loop ---
@@ -189,11 +191,11 @@
             e.x += e.vx;
             e.y += e.vy;
 
-            // Bounce off viewport edges: zero the component going into the wall
-            if (e.x < margin)                      { e.x = margin;                      e.vx = Math.max(0, e.vx); }
-            if (e.x > window.innerWidth  - margin) { e.x = window.innerWidth  - margin; e.vx = Math.min(0, e.vx); }
-            if (e.y < margin)                      { e.y = margin;                      e.vy = Math.max(0, e.vy); }
-            if (e.y > window.innerHeight - margin) { e.y = window.innerHeight - margin; e.vy = Math.min(0, e.vy); }
+            // Bounce off world edges: zero the component going into the wall
+            if (e.x < margin)             { e.x = margin;             e.vx = Math.max(0, e.vx); }
+            if (e.x > WORLD_W - margin)   { e.x = WORLD_W - margin;   e.vx = Math.min(0, e.vx); }
+            if (e.y < margin)             { e.y = margin;             e.vy = Math.max(0, e.vy); }
+            if (e.y > WORLD_H - margin)   { e.y = WORLD_H - margin;   e.vy = Math.min(0, e.vy); }
 
             // Thruster glow only on the player entity
             if (isPlayer) {

@@ -22,13 +22,18 @@ body {
 /* --- World / Arena --- */
 #world {
     position: absolute;
-    inset: 0;
+    width: 500px;
+    height: 500px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     background:
         linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
     background-size: 40px 40px;
     background-color: #16213e;
     overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
 }
 
 /* Block tile canvas — fills the world, sits below entity divs */
