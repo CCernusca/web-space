@@ -34,8 +34,9 @@
         blockMap:  {}         // { "tx,ty": bui }
     });
 
-    // --- Editor state ---
+    // --- Editor / pause state ---
     let editorOpen = false;
+    let paused     = false;
 
     // --- Input state ---
     const keys = {};
@@ -68,6 +69,8 @@
         renderEntities();
         updateHUD();
 
+        setupWorldMouse();
+
         if (isMobile) {
             deviceTypeEl.innerHTML = "Device: <span>Mobile</span>";
             joystickContainer.classList.remove("hidden");
@@ -75,7 +78,7 @@
             setupJoystick();
         } else {
             deviceTypeEl.innerHTML = "Device: <span>PC</span>";
-            controlHint.textContent = "W/S: thrust  |  A/D: turn";
+            controlHint.textContent = "W/S: thrust  |  A/D: turn  |  Space: pause";
             setupKeyboard();
         }
 
@@ -164,7 +167,7 @@
 
     // --- Game loop ---
     function gameLoop() {
-        if (!editorOpen) {
+        if (!editorOpen && !paused) {
             move();
             tiles.resolveCollisions(entities);
         }
@@ -225,11 +228,82 @@
         }
     }
 
+    // --- World-space mouse helpers ---
+    function worldPosFromMouseEvent(e) {
+        const rect = worldEl.getBoundingClientRect();
+        return {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
+    }
+
+    function isInsideWorld(pos) {
+        return pos.x >= 0 && pos.x <= WORLD_W && pos.y >= 0 && pos.y <= WORLD_H;
+    }
+
+    function setupWorldMouse() {
+        // Right-click: spawn a new entity at cursor position
+        worldEl.addEventListener("contextmenu", function (e) {
+            e.preventDefault();
+            if (editorOpen) return;
+            const pos = worldPosFromMouseEvent(e);
+            if (!isInsideWorld(pos)) return;
+            const uid = "entity_" + Math.random().toString(36).slice(2, 9);
+            const entity = {
+                uid,
+                x:               pos.x,
+                y:               pos.y,
+                vx:              0,
+                vy:              0,
+                angle:           0,
+                angularVelocity: 0,
+                mass:            1,
+                interactionRadius: 0,
+                momentOfInertia: 1,
+                blockData: {},
+                blockMap:  {}
+            };
+            tiles.computeEntityProps(entity);
+            entities.set(uid, entity);
+            renderEntities();
+        });
+
+        // Ctrl + left-click: take control of entity within interaction radius
+        worldEl.addEventListener("click", function (e) {
+            if (!e.ctrlKey) return;
+            if (editorOpen) return;
+            const pos = worldPosFromMouseEvent(e);
+            if (!isInsideWorld(pos)) return;
+            let best = null;
+            let bestDist = Infinity;
+            for (const [uid, ent] of entities) {
+                if (uid === playerUID) continue;
+                const dx = ent.x - pos.x;
+                const dy = ent.y - pos.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const radius = Math.max(ent.interactionRadius, 16); // minimum click target
+                if (dist <= radius && dist < bestDist) {
+                    bestDist = dist;
+                    best = uid;
+                }
+            }
+            if (best !== null) {
+                playerUID = best;
+                renderEntities();
+                updateHUD();
+            }
+        });
+    }
+
     // --- Keyboard (PC) ---
     function setupKeyboard() {
         document.addEventListener("keydown", function (e) {
             keys[e.key.toLowerCase()] = true;
-            if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(e.key.toLowerCase())) {
+            if (e.key === " ") {
+                e.preventDefault();
+                if (!editorOpen) paused = !paused;
+            }
+            if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(e.key.toLowerCase())) {
                 e.preventDefault();
             }
         });
