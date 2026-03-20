@@ -202,7 +202,7 @@
                 // frame; collision-induced spin is preserved but decayed.  This keeps the
                 // same steady-state turn rate (turn * TURN_SPEED rad/frame) without
                 // runaway build-up, and makes resolveContact account for the rotation.
-                e.angularVelocity = turn * TURN_SPEED + e.angularVelocity * ANG_DAMP;
+                e.angularVelocity = (turn * TURN_SPEED) / e.mass + e.angularVelocity * ANG_DAMP;
                 const accel = (thrust * THRUST) / e.mass;
                 e.vx += Math.sin(e.angle) * accel;
                 e.vy -= Math.cos(e.angle) * accel;
