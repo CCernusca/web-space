@@ -194,19 +194,22 @@
         return anchors;
     }
 
-    // Recompute and write entity.mass, entity.interactionRadius, entity.momentOfInertia.
-    // Also repositions entity.x/y to the block center of mass and re-keys blockMap so
-    // the CoM is always at local (0,0).  Calling this multiple times is safe (idempotent):
-    // once the origin equals the CoM, the computed shift is zero.
+    // Recompute entity physics properties and update entity.x/y to track the block
+    // center of mass.
+    //
+    // blockMap keys remain integers throughout (editor-safe).  Instead, the CoM
+    // offset from the integer-tile origin is stored as entity.comOffsetX/Y (local px).
+    // Only the *delta* since the last call is applied to entity.x/y, so this is
+    // idempotent: calling it twice with no block changes is a no-op.
     function computeEntityProps(entity) {
         if (!entity.blockData) { entity.blockData = {}; }
         if (!entity.blockMap)  { entity.blockMap  = {}; }
 
         const anchors = _blockAnchors(entity);
 
-        // --- Pass 1: compute block center of mass in local pixel space ---
+        // Compute block CoM in integer-tile local space (px from grid origin)
         let blockMassSum = 0;
-        let comLx = 0, comLy = 0;
+        let newComOX = 0, newComOY = 0;
 
         for (const [bui, datum] of Object.entries(entity.blockData)) {
             if (!registry) continue;
@@ -218,47 +221,35 @@
             if (!anchor) continue;
             const bcx = (anchor.tx + (w - 1) / 2) * TILE_SIZE;
             const bcy = (anchor.ty + (h - 1) / 2) * TILE_SIZE;
-            comLx += m * bcx;
-            comLy += m * bcy;
+            newComOX += m * bcx;
+            newComOY += m * bcy;
             blockMassSum += m;
         }
+        if (blockMassSum > 0) { newComOX /= blockMassSum; newComOY /= blockMassSum; }
 
-        if (blockMassSum > 0) {
-            comLx /= blockMassSum;
-            comLy /= blockMassSum;
+        // Shift entity world position by the delta in CoM offset
+        const dox = newComOX - (entity.comOffsetX || 0);
+        const doy = newComOY - (entity.comOffsetY || 0);
+        if ((Math.abs(dox) > 1e-9 || Math.abs(doy) > 1e-9) && entity.x !== undefined) {
+            const cos = Math.cos(entity.angle || 0);
+            const sin = Math.sin(entity.angle || 0);
+            entity.x += dox * cos - doy * sin;
+            entity.y += dox * sin + doy * cos;
         }
+        entity.comOffsetX = newComOX;
+        entity.comOffsetY = newComOY;
 
-        // --- Shift entity origin to CoM (skip if already there) ---
-        if (Math.abs(comLx) > 1e-6 || Math.abs(comLy) > 1e-6) {
-            const cos = Math.cos(entity.angle);
-            const sin = Math.sin(entity.angle);
-            entity.x += comLx * cos - comLy * sin;
-            entity.y += comLx * sin + comLy * cos;
-
-            // Re-key blockMap so CoM = (0,0) in local tile space
-            const dtx = comLx / TILE_SIZE;
-            const dty = comLy / TILE_SIZE;
-            const newMap = {};
-            for (const [posKey, bui] of Object.entries(entity.blockMap)) {
-                const [tx, ty] = posKey.split(",").map(Number);
-                newMap[(tx - dtx) + "," + (ty - dty)] = bui;
-            }
-            entity.blockMap = newMap;
-        }
-
-        // --- Pass 2: compute physics properties from the (now-centered) positions ---
-        const centeredAnchors = _blockAnchors(entity);
+        // Physics properties — block positions measured from CoM
         let totalMass   = BASE_MASS;
         let maxRadiusSq = 0;
-        let moi         = BASE_MASS; // hull: point mass at origin
+        let moi         = BASE_MASS; // bare hull: point mass at CoM
 
         for (const posKey of Object.keys(entity.blockMap)) {
             const [tx, ty] = posKey.split(",").map(Number);
-            // Check all 4 corners of this tile cell
             for (let cx = tx; cx <= tx + 1; cx++) {
                 for (let cy = ty; cy <= ty + 1; cy++) {
-                    const lx = (cx - 0.5) * TILE_SIZE;
-                    const ly = (cy - 0.5) * TILE_SIZE;
+                    const lx = (cx - 0.5) * TILE_SIZE - newComOX;
+                    const ly = (cy - 0.5) * TILE_SIZE - newComOY;
                     const dSq = lx * lx + ly * ly;
                     if (dSq > maxRadiusSq) maxRadiusSq = dSq;
                 }
@@ -272,13 +263,12 @@
             const m          = type.properties.mass || 0;
             const { x: w, y: h } = type.properties.size;
             totalMass += m;
-            const anchor = centeredAnchors[bui];
+            const anchor = anchors[bui];
             if (!anchor) continue;
-            const bcx   = (anchor.tx + (w - 1) / 2) * TILE_SIZE;
-            const bcy   = (anchor.ty + (h - 1) / 2) * TILE_SIZE;
+            const bcx   = (anchor.tx + (w - 1) / 2) * TILE_SIZE - newComOX;
+            const bcy   = (anchor.ty + (h - 1) / 2) * TILE_SIZE - newComOY;
             const Iself = m * ((w * TILE_SIZE) ** 2 + (h * TILE_SIZE) ** 2) / 12;
-            const d2    = bcx * bcx + bcy * bcy;
-            moi += Iself + m * d2;
+            moi += Iself + m * (bcx * bcx + bcy * bcy);
         }
 
         entity.mass              = totalMass;
@@ -320,17 +310,19 @@
     // =========================================================================
 
     // Return the 4 world-space corners of a tile at (tx, ty) belonging to entity.
+    // Tile local positions are offset by -comOffset so entity.x/y is the CoM.
     function _tileWorldCorners(tx, ty, entity) {
         const TS  = TILE_SIZE;
+        const ox  = entity.comOffsetX || 0;
+        const oy  = entity.comOffsetY || 0;
         const cos = Math.cos(entity.angle);
         const sin = Math.sin(entity.angle);
         const ex  = entity.x, ey = entity.y;
-        // Local corners; tile center is at (tx*TS, ty*TS), corners offset by ±0.5*TS
         return [
-            [(tx - 0.5) * TS, (ty - 0.5) * TS],
-            [(tx + 0.5) * TS, (ty - 0.5) * TS],
-            [(tx + 0.5) * TS, (ty + 0.5) * TS],
-            [(tx - 0.5) * TS, (ty + 0.5) * TS]
+            [(tx - 0.5) * TS - ox, (ty - 0.5) * TS - oy],
+            [(tx + 0.5) * TS - ox, (ty - 0.5) * TS - oy],
+            [(tx + 0.5) * TS - ox, (ty + 0.5) * TS - oy],
+            [(tx - 0.5) * TS - ox, (ty + 0.5) * TS - oy]
         ].map(function ([lx, ly]) {
             return [ex + lx * cos - ly * sin,
                     ey + lx * sin + ly * cos];
@@ -339,8 +331,8 @@
 
     // Return the world-space center of a tile at (tx, ty) belonging to entity.
     function _tileWorldCenter(tx, ty, entity) {
-        const lx  = tx * TILE_SIZE;
-        const ly  = ty * TILE_SIZE;
+        const lx  = tx * TILE_SIZE - (entity.comOffsetX || 0);
+        const ly  = ty * TILE_SIZE - (entity.comOffsetY || 0);
         const cos = Math.cos(entity.angle);
         const sin = Math.sin(entity.angle);
         return [entity.x + lx * cos - ly * sin,
@@ -531,6 +523,9 @@
             ctx.translate(entity.x, entity.y);
             ctx.rotate(entity.angle);
 
+            const ox = entity.comOffsetX || 0;
+            const oy = entity.comOffsetY || 0;
+
             for (const [posKey, bui] of Object.entries(map)) {
                 const datum = entity.blockData[bui];
                 if (!datum) continue;
@@ -541,8 +536,8 @@
                 const { r, g, b } = type.properties.color;
                 ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
                 ctx.fillRect(
-                    (Number(tx) - 0.5) * TILE_SIZE,
-                    (Number(ty) - 0.5) * TILE_SIZE,
+                    (Number(tx) - 0.5) * TILE_SIZE - ox,
+                    (Number(ty) - 0.5) * TILE_SIZE - oy,
                     TILE_SIZE,
                     TILE_SIZE
                 );

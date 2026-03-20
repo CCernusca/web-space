@@ -178,6 +178,7 @@
                     cells.push({ col, row });
                 }
             }
+            if (canPlace && !isConnected(htx, hty, bw, bh)) canPlace = false;
 
             const color = canPlace
                 ? `rgba(${r},${g},${b},0.55)`
@@ -202,6 +203,48 @@
         ctx.restore();
     }
 
+    // ---- Block helpers (editor-local, no computeEntityProps / CoM shift) ----
+
+    function editorPlaceBlock(typeId, tx, ty) {
+        const type = registry[typeId];
+        if (!type) return false;
+        const { x: w, y: h } = type.properties.size;
+        for (let dy = 0; dy < h; dy++)
+            for (let dx = 0; dx < w; dx++)
+                if (workingEntity.blockMap[(tx + dx) + "," + (ty + dy)] !== undefined)
+                    return false;
+        const bui = "bui_" + Math.random().toString(36).slice(2, 9);
+        const datum = { typeId };
+        for (const [k, v] of Object.entries(type.data)) datum[k] = v;
+        workingEntity.blockData[bui] = datum;
+        for (let dy = 0; dy < h; dy++)
+            for (let dx = 0; dx < w; dx++)
+                workingEntity.blockMap[(tx + dx) + "," + (ty + dy)] = bui;
+        return true;
+    }
+
+    function editorEraseBlock(bui) {
+        delete workingEntity.blockData[bui];
+        for (const key of Object.keys(workingEntity.blockMap))
+            if (workingEntity.blockMap[key] === bui) delete workingEntity.blockMap[key];
+    }
+
+    // A block covering (tx..tx+w-1, ty..ty+h-1) may be placed if any of its cells
+    // is the origin (0,0) or 4-adjacent to an already-occupied tile.
+    function isConnected(tx, ty, w, h) {
+        for (let dy = 0; dy < h; dy++) {
+            for (let dx = 0; dx < w; dx++) {
+                const cx = tx + dx, cy = ty + dy;
+                if (cx === 0 && cy === 0) return true;
+                if (workingEntity.blockMap[(cx - 1) + "," + cy]  !== undefined) return true;
+                if (workingEntity.blockMap[(cx + 1) + "," + cy]  !== undefined) return true;
+                if (workingEntity.blockMap[cx + "," + (cy - 1)]  !== undefined) return true;
+                if (workingEntity.blockMap[cx + "," + (cy + 1)]  !== undefined) return true;
+            }
+        }
+        return false;
+    }
+
     // ---- Interaction -----------------------------------------------
 
     function canvasCoords(e) {
@@ -222,9 +265,12 @@
         const key = tx + "," + ty;
         const existingBui = workingEntity.blockMap[key];
         if (existingBui !== undefined) {
-            tiles.removeBlock(workingEntity, existingBui);
+            editorEraseBlock(existingBui);
         } else if (selectedTypeId) {
-            tiles.addBlock(workingEntity, selectedTypeId, tx, ty);
+            const type = registry[selectedTypeId];
+            const w = type ? type.properties.size.x : 1;
+            const h = type ? type.properties.size.y : 1;
+            if (isConnected(tx, ty, w, h)) editorPlaceBlock(selectedTypeId, tx, ty);
         }
         render();
     }
