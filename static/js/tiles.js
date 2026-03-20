@@ -561,13 +561,20 @@
 
                 const [tx, ty] = posKey.split(",");
                 const { r, g, b } = type.properties.color;
+                const maxHealth = type.properties.maxHealth || 1;
+                const damage = maxHealth - (datum.health ?? maxHealth);
+                const redAlpha = Math.min(damage / maxHealth, 1) * 0.75;
+
+                const bx = (Number(tx) - 0.5) * TILE_SIZE - ox;
+                const by = (Number(ty) - 0.5) * TILE_SIZE - oy;
+
                 ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
-                ctx.fillRect(
-                    (Number(tx) - 0.5) * TILE_SIZE - ox,
-                    (Number(ty) - 0.5) * TILE_SIZE - oy,
-                    TILE_SIZE,
-                    TILE_SIZE
-                );
+                ctx.fillRect(bx, by, TILE_SIZE, TILE_SIZE);
+
+                if (redAlpha > 0) {
+                    ctx.fillStyle = "rgba(220,30,30," + redAlpha.toFixed(3) + ")";
+                    ctx.fillRect(bx, by, TILE_SIZE, TILE_SIZE);
+                }
             }
 
             ctx.restore();
