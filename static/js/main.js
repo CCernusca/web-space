@@ -177,10 +177,30 @@
     }
 
     // --- Game loop ---
+    // Sub-step budget: keep displacement per step below half a tile (8 px).
+    // Angular contribution: corner tip moves at |ω| * interactionRadius per frame.
+    const SUBSTEP_THRESHOLD = 8;  // px per step before we add another step
+    const MAX_SUBSTEPS       = 8;
+
     function gameLoop() {
         if (!editorOpen && !paused) {
-            move();
-            tiles.resolveCollisions(entities);
+            applyForces();
+
+            // Choose sub-step count from the fastest-moving entity this frame
+            let maxDisp = 0;
+            for (const e of entities.values()) {
+                const linear  = Math.sqrt(e.vx * e.vx + e.vy * e.vy);
+                const angular = Math.abs(e.angularVelocity) * (e.interactionRadius || 0);
+                const disp    = linear + angular;
+                if (disp > maxDisp) maxDisp = disp;
+            }
+            const steps = Math.min(MAX_SUBSTEPS, Math.max(1, Math.ceil(maxDisp / SUBSTEP_THRESHOLD)));
+            const dt    = 1 / steps;
+
+            for (let s = 0; s < steps; s++) {
+                integrateEntities(dt);
+                tiles.resolveCollisions(entities);
+            }
         }
         tiles.renderBlocks(canvasEl, entities);
         renderEntities();
@@ -188,12 +208,13 @@
         requestAnimationFrame(gameLoop);
     }
 
-    function move() {
+    // Phase 1 — apply forces/input to velocities (once per frame, before sub-stepping).
+    function applyForces() {
         let thrust = 0;
         let turn   = 0;
 
         if (isMobile) {
-            thrust = -joystickDir.y; // joystick up = negative screen Y = forward
+            thrust = -joystickDir.y;
             turn   =  joystickDir.x;
         } else {
             if (keys["w"] || keys["arrowup"])    thrust += 1;
@@ -202,17 +223,10 @@
             if (keys["d"] || keys["arrowright"]) turn   += 1;
         }
 
-        const margin = 16;
-
         for (const [uid, e] of entities) {
             const isPlayer = uid === playerUID;
 
             if (isPlayer) {
-                // Fold player turn into angularVelocity so collision response sees it.
-                // "Set not accumulate": player input overrides the control component each
-                // frame; collision-induced spin is preserved but decayed.  This keeps the
-                // same steady-state turn rate (turn * TURN_SPEED rad/frame) without
-                // runaway build-up, and makes resolveContact account for the rotation.
                 e.angularVelocity = (turn * TURN_SPEED) / e.mass + e.angularVelocity * ANG_DAMP;
                 const accel = (thrust * THRUST) / e.mass;
                 e.vx += Math.sin(e.angle) * accel;
@@ -221,23 +235,10 @@
                 e.angularVelocity *= ANG_DAMP;
             }
 
-            // Integrate spin and position
-            e.angle += e.angularVelocity;
-
-            // Integrate position — no drag, velocity persists
-            e.x += e.vx;
-            e.y += e.vy;
-
-            // Bounce off world edges: zero the component going into the wall
-            if (e.x < margin)             { e.x = margin;             e.vx = Math.max(0, e.vx); }
-            if (e.x > WORLD_W - margin)   { e.x = WORLD_W - margin;   e.vx = Math.min(0, e.vx); }
-            if (e.y < margin)             { e.y = margin;             e.vy = Math.max(0, e.vy); }
-            if (e.y > WORLD_H - margin)   { e.y = WORLD_H - margin;   e.vy = Math.min(0, e.vy); }
-
-            // Left-click attraction: pull toward cursor, force proportional to distance
+            // Attraction force (position-dependent, but applied once per frame is fine)
             if (attractPos) {
-                const dx = attractPos.x - e.x;
-                const dy = attractPos.y - e.y;
+                const dx   = attractPos.x - e.x;
+                const dy   = attractPos.y - e.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 if (dist > 0 && dist <= ATTRACT_RADIUS) {
                     const accel = (ATTRACT_STRENGTH * dist / ATTRACT_RADIUS) / e.mass;
@@ -246,13 +247,26 @@
                 }
             }
 
-            // Thruster glow only on the player entity
+            // Thruster glow
             if (isPlayer) {
                 const el = document.getElementById("ent-" + uid);
-                if (el) {
-                    el.classList.toggle("entity--moving", e.vx * e.vx + e.vy * e.vy > 0.01);
-                }
+                if (el) el.classList.toggle("entity--moving", e.vx * e.vx + e.vy * e.vy > 0.01);
             }
+        }
+    }
+
+    // Phase 2 — integrate positions by fraction dt of a full frame, clamp to walls.
+    function integrateEntities(dt) {
+        const margin = 16;
+        for (const e of entities.values()) {
+            e.angle += e.angularVelocity * dt;
+            e.x     += e.vx * dt;
+            e.y     += e.vy * dt;
+
+            if (e.x < margin)           { e.x = margin;           e.vx = Math.max(0, e.vx); }
+            if (e.x > WORLD_W - margin) { e.x = WORLD_W - margin; e.vx = Math.min(0, e.vx); }
+            if (e.y < margin)           { e.y = margin;           e.vy = Math.max(0, e.vy); }
+            if (e.y > WORLD_H - margin) { e.y = WORLD_H - margin; e.vy = Math.min(0, e.vy); }
         }
     }
 

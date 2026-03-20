@@ -36,6 +36,8 @@
     const TILE_SIZE    = 16;             // px per tile cell in entity-local space
     const BASE_MASS    = 1.0;            // mass of a bare entity with no blocks
     const RESTITUTION  = 0.35;           // coefficient of restitution (0=inelastic, 1=elastic)
+    const POS_CORRECTION_FACTOR = 0.4;  // fraction of overlap corrected per step (Baumgarte)
+    const POS_SLOP              = 0.5;  // overlap tolerance (px) before correction kicks in
     const REGISTRY_KEY = "ws_blockRegistry";
     const REGISTRY_URL = "/api/block-registry";
 
@@ -409,6 +411,14 @@
         // Apply equal-and-opposite impulses at the contact point
         applyImpulse(entityA,  j * nx,  j * ny, cx, cy);
         applyImpulse(entityB, -j * nx, -j * ny, cx, cy);
+
+        // Positional correction (Baumgarte): push entities apart to prevent sinking
+        const correction = Math.max(contact.overlap - POS_SLOP, 0) * POS_CORRECTION_FACTOR
+            / (invMA + invMB);
+        entityA.x += nx * correction * invMA;
+        entityA.y += ny * correction * invMA;
+        entityB.x -= nx * correction * invMB;
+        entityB.y -= ny * correction * invMB;
     }
 
     // Full collision resolution pass for all entity pairs.
