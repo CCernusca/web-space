@@ -45,7 +45,8 @@
     let paused     = false;
 
     // --- Explosion state ---
-    let activeExplosions = [];
+    let activeExplosions        = [];
+    let pendingExplosionImpulses = [];  // flushed after split processing each frame
     let mouseWorldPos    = null;
 
     // --- Input state ---
@@ -239,6 +240,29 @@
                     entities.set(newUid, spec);
                 }
             }
+
+            // Apply deferred explosion impulses now that splits are resolved.
+            // Each impulse is applied to whatever entity currently owns the block,
+            // so split pieces get rotation relative to their own post-split CoM.
+            for (const hit of pendingExplosionImpulses) {
+                // Find current owner — may be a new split entity
+                let owner = null;
+                for (const e of entities.values()) {
+                    if (e.blockData[hit.bui] !== undefined) { owner = e; break; }
+                }
+                // Destroyed blocks fall back to the original entity reference
+                if (!owner) owner = hit.entity;
+                if (!entities.has(owner.uid)) continue;
+
+                const ecos  = Math.cos(owner.angle);
+                const esin  = Math.sin(owner.angle);
+                const blx   = hit.tx * tiles.TILE_SIZE - (owner.comOffsetX || 0);
+                const bly   = hit.ty * tiles.TILE_SIZE - (owner.comOffsetY || 0);
+                const impWx = owner.x + blx * ecos - bly * esin;
+                const impWy = owner.y + blx * esin + bly * ecos;
+                tiles.applyImpulse(owner, hit.rdx * hit.impulseMag, hit.rdy * hit.impulseMag, impWx, impWy);
+            }
+            pendingExplosionImpulses = [];
         }
         tiles.renderBlocks(canvasEl, entities);
         renderExplosions();
@@ -365,15 +389,10 @@
                     // Apply impulse at the block's world-space center so the torque
                     // arm is from the entity CoM to the hit block — not the ray sample
                     // point, which can be collinear with the impulse (r × F = 0).
-                    const ecos  = Math.cos(entity.angle);
-                    const esin  = Math.sin(entity.angle);
-                    const blx   = tx * tiles.TILE_SIZE - (entity.comOffsetX || 0);
-                    const bly   = ty * tiles.TILE_SIZE - (entity.comOffsetY || 0);
-                    const impWx = entity.x + blx * ecos - bly * esin;
-                    const impWy = entity.y + blx * esin + bly * ecos;
-
+                    // Defer impulse until after damage + split so each piece
+                    // gets rotation relative to its own post-split CoM.
                     const impulseMag = currentStrength * EXPLOSION_IMPULSE_SCALE;
-                    tiles.applyImpulse(entity, rdx * impulseMag, rdy * impulseMag, impWx, impWy);
+                    pendingExplosionImpulses.push({ entity, bui, tx, ty, rdx, rdy, impulseMag });
 
                     if (blockHealth < currentStrength) {
                         // Block destroyed — ray continues with reduced strength
