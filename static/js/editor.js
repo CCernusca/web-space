@@ -28,6 +28,7 @@
     let hoverRow       = null;
     let registry       = null;
     let onSaveCb       = null;
+    let onCloseCb      = null;
 
     let canvas = null;
     let ctx    = null;
@@ -50,9 +51,10 @@
 
     // ---- Open / close ----------------------------------------------
 
-    function open(entity, reg, onSave) {
-        registry  = reg;
-        onSaveCb  = onSave;
+    function open(entity, reg, onSave, onClose) {
+        registry   = reg;
+        onSaveCb   = onSave;
+        onCloseCb  = onClose || null;
 
         // Deep-copy the entity's blocks so edits don't affect the live game
         workingEntity = {
@@ -82,6 +84,7 @@
         document.getElementById("editor-overlay").classList.add("hidden");
         hoverCol = null;
         hoverRow = null;
+        if (onCloseCb) { onCloseCb(); onCloseCb = null; }
     }
 
     // ---- Palette ---------------------------------------------------

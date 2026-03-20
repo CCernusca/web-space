@@ -139,6 +139,8 @@
                 player.blockMap  = newBlockMap;
                 tiles.applyDesignChange(player);
                 editorOpen = false;
+            }, function () {
+                editorOpen = false;
             });
         });
 
