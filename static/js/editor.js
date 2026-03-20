@@ -113,6 +113,8 @@
         document.getElementById("editor-overlay").classList.add("hidden");
         hoverCol = null;
         hoverRow = null;
+        moveMode = false;
+        document.getElementById("btn-editor-move").classList.remove("active");
         if (onCloseCb) { onCloseCb(); onCloseCb = null; }
     }
 
@@ -212,8 +214,41 @@
             ctx.restore();
         }
 
-        // Hover preview
-        if (hoverCol !== null && selectedTypeId && registry[selectedTypeId]) {
+        // Move-mode hover: ghost of the entire design at the target position
+        if (moveMode && hoverCol !== null) {
+            const { tx: htx, ty: hty } = gridToTile(hoverCol, hoverRow);
+            const keys = Object.keys(workingEntity.blockMap);
+            if (keys.length > 0) {
+                let minTx = Infinity, maxTx = -Infinity;
+                let minTy = Infinity, maxTy = -Infinity;
+                for (const key of keys) {
+                    const [tx, ty] = key.split(",").map(Number);
+                    if (tx < minTx) minTx = tx; if (tx > maxTx) maxTx = tx;
+                    if (ty < minTy) minTy = ty; if (ty > maxTy) maxTy = ty;
+                }
+                const dx    = htx - Math.round((minTx + maxTx) / 2);
+                const dy    = hty - Math.round((minTy + maxTy) / 2);
+                const valid = moveOffset(htx, hty) !== null;
+                const alpha = valid ? 0.45 : 0.25;
+                for (const [posKey, bui] of Object.entries(workingEntity.blockMap)) {
+                    const [tx, ty] = posKey.split(",").map(Number);
+                    const { col: gc, row: gr } = tileToGrid(tx + dx, ty + dy);
+                    if (!inBounds(gc, gr)) continue;
+                    const datum = workingEntity.blockData[bui];
+                    if (!datum) continue;
+                    const type = registry[datum.typeId];
+                    if (!type) continue;
+                    const { r, g, b } = type.properties.color;
+                    ctx.fillStyle = valid
+                        ? `rgba(${r},${g},${b},${alpha})`
+                        : `rgba(230,60,60,${alpha})`;
+                    ctx.fillRect(gc * TS + 1, gr * TS + 1, TS - 2, TS - 2);
+                }
+            }
+        }
+
+        // Hover preview (suppressed in move mode)
+        if (!moveMode && hoverCol !== null && selectedTypeId && registry[selectedTypeId]) {
             const type = registry[selectedTypeId];
             const { r, g, b } = type.properties.color;
             const bw = type.properties.size.x;
@@ -338,8 +373,9 @@
         };
     }
 
-    let dragMode    = null;  // "place" | "erase" | null
-    let dragVisited = null;  // Set of "col,row" strings acted on this drag
+    let dragMode    = null;   // "place" | "erase" | null
+    let dragVisited = null;   // Set of "col,row" strings acted on this drag
+    let moveMode    = false;  // whole-design repositioning mode
 
     function applyDrag(col, row) {
         if (!dragMode || !inBounds(col, row)) return;
@@ -364,10 +400,53 @@
         render();
     }
 
+    function toggleMoveMode() {
+        moveMode = !moveMode;
+        document.getElementById("btn-editor-move").classList.toggle("active", moveMode);
+        render();
+    }
+
+    // Returns the dx,dy tile offset that places the design's bounding-box centre
+    // at the given target tile, or null if any block would land out of bounds.
+    function moveOffset(targetTx, targetTy) {
+        const keys = Object.keys(workingEntity.blockMap);
+        if (keys.length === 0) return null;
+        let minTx = Infinity, maxTx = -Infinity;
+        let minTy = Infinity, maxTy = -Infinity;
+        for (const key of keys) {
+            const [tx, ty] = key.split(",").map(Number);
+            if (tx < minTx) minTx = tx; if (tx > maxTx) maxTx = tx;
+            if (ty < minTy) minTy = ty; if (ty > maxTy) maxTy = ty;
+        }
+        const dx = targetTx - Math.round((minTx + maxTx) / 2);
+        const dy = targetTy - Math.round((minTy + maxTy) / 2);
+        for (const key of keys) {
+            const [tx, ty] = key.split(",").map(Number);
+            const { col, row } = tileToGrid(tx + dx, ty + dy);
+            if (!inBounds(col, row)) return null;
+        }
+        return { dx, dy };
+    }
+
+    function tryMoveDesign(col, row) {
+        const { tx, ty } = gridToTile(col, row);
+        const off = moveOffset(tx, ty);
+        if (!off) return;
+        const newBlockMap = {};
+        for (const [key, bui] of Object.entries(workingEntity.blockMap)) {
+            const [btx, bty] = key.split(",").map(Number);
+            newBlockMap[(btx + off.dx) + "," + (bty + off.dy)] = bui;
+        }
+        workingEntity.blockMap = newBlockMap;
+        render();
+    }
+
     function handleMouseDown(e) {
         if (e.button !== 0 || !canvas || !registry) return;
         const { col, row } = canvasCoords(e);
         if (!inBounds(col, row)) { dragMode = null; return; }
+
+        if (moveMode) { tryMoveDesign(col, row); return; }
 
         const { tx, ty } = gridToTile(col, row);
         const mapKey     = tx + "," + ty;
@@ -442,6 +521,8 @@
             .addEventListener("click", close);
         document.getElementById("btn-editor-save")
             .addEventListener("click", save);
+        document.getElementById("btn-editor-move")
+            .addEventListener("click", toggleMoveMode);
     });
 
     window.editor = { open, close };

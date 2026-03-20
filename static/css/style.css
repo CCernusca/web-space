@@ -245,6 +245,12 @@ body {
     color: #ccc;
 }
 
+.editor-btn.active {
+    border-color: rgba(255, 255, 255, 0.55);
+    color: #e0e0e0;
+    background: rgba(255, 255, 255, 0.08);
+}
+
 .editor-btn-save {
     border-color: rgba(233, 69, 96, 0.5);
     color: #e94560;
