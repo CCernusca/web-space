@@ -268,9 +268,17 @@
     // Sub-step budget: keep displacement per step below half a tile (8 px).
     // Angular contribution: corner tip moves at |ω| * interactionRadius per frame.
     const SUBSTEP_THRESHOLD = 8;  // px per step before we add another step
-    const MAX_SUBSTEPS       = 8;
+    const MAX_SUBSTEPS       = isMobile ? 4 : 8;
+    const FRAME_MS           = isMobile ? 1000 / 30 : 0; // 30 fps cap on mobile
+    let   lastFrameTime      = 0;
 
-    function gameLoop() {
+    function gameLoop(timestamp) {
+        requestAnimationFrame(gameLoop);
+        if (FRAME_MS > 0) {
+            const elapsed = timestamp - lastFrameTime;
+            if (elapsed < FRAME_MS) return;
+            lastFrameTime = timestamp - (elapsed % FRAME_MS);
+        }
         if (!editorOpen && !paused) {
             applyForces();
 
@@ -358,7 +366,6 @@
         renderExplosions();
         renderEntities();
         updateHUD();
-        requestAnimationFrame(gameLoop);
     }
 
     // Phase 1 — apply forces/input to velocities (once per frame, before sub-stepping).
