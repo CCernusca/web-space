@@ -12,11 +12,11 @@ BLOCK_REGISTRY = {
             "id": "hull_light",
             "size": {"x": 1, "y": 1},
             "color": {"r": 80, "g": 105, "b": 150},
-            "maxHealth": 50,
+            "maxHealth": 500,
             "mass": 5,
         },
         "data": {
-            "health": 50,
+            "health": 500,
         },
     },
     "hull_heavy": {
@@ -24,11 +24,11 @@ BLOCK_REGISTRY = {
             "id": "hull_heavy",
             "size": {"x": 2, "y": 1},
             "color": {"r": 55, "g": 75, "b": 110},
-            "maxHealth": 150,
+            "maxHealth": 1500,
             "mass": 15,
         },
         "data": {
-            "health": 150,
+            "health": 1500,
         },
     },
     "armor_plate": {
@@ -36,11 +36,11 @@ BLOCK_REGISTRY = {
             "id": "armor_plate",
             "size": {"x": 1, "y": 2},
             "color": {"r": 95, "g": 110, "b": 135},
-            "maxHealth": 200,
+            "maxHealth": 2000,
             "mass": 20,
         },
         "data": {
-            "health": 200,
+            "health": 2000,
         },
     },
     "cockpit": {
@@ -48,11 +48,11 @@ BLOCK_REGISTRY = {
             "id": "cockpit",
             "size": {"x": 1, "y": 1},
             "color": {"r": 60, "g": 160, "b": 200},
-            "maxHealth": 80,
+            "maxHealth": 800,
             "mass": 3,
         },
         "data": {
-            "health": 80,
+            "health": 800,
         },
     },
 }
