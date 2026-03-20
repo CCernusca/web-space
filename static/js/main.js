@@ -67,6 +67,13 @@
         // Load block registry before starting (fast: localStorage hit, or one fetch)
         await tiles.initRegistry();
 
+        // Give the initial player a cockpit if it has no blocks yet
+        // (Drive restoration happens later and will override this for returning users)
+        const initialPlayer = entities.get(playerUID);
+        if (initialPlayer && Object.keys(initialPlayer.blockMap).length === 0) {
+            tiles.addBlock(initialPlayer, "cockpit", 0, 0);
+        }
+
         // Now that registry is available, compute physics props for all entities.
         // applyDesignChange also shifts entity.x/y to the CoM (migration for old saves).
         for (const e of entities.values()) tiles.applyDesignChange(e);
@@ -202,6 +209,14 @@
                 integrateEntities(dt);
                 tiles.resolveCollisions(entities);
             }
+
+            // Destroy any entity whose blocks were all demolished this frame
+            for (const [uid, e] of entities) {
+                if (Object.keys(e.blockMap).length === 0) {
+                    if (uid === playerUID) playerUID = null;
+                    entities.delete(uid);
+                }
+            }
         }
         tiles.renderBlocks(canvasEl, entities);
         renderEntities();
@@ -329,7 +344,7 @@
                 blockData: {},
                 blockMap:  {}
             };
-            tiles.computeEntityProps(entity);
+            tiles.addBlock(entity, "cockpit", 0, 0);
             entities.set(uid, entity);
             renderEntities();
         });
@@ -408,7 +423,7 @@
             mass: 1, interactionRadius: 0, momentOfInertia: 1,
             blockData: {}, blockMap: {}
         };
-        tiles.computeEntityProps(entity);
+        tiles.addBlock(entity, "cockpit", 0, 0);
         entities.set(uid, entity);
         renderEntities();
     }
