@@ -28,13 +28,28 @@
         const player = entities.get(playerUID);
         if (!player) return;
 
-        camera.x += (player.x - camera.x) * CAM_POS_LERP;
-        camera.y += (player.y - camera.y) * CAM_POS_LERP;
-
-        // Shortest-path angle lerp
+        // Rotate first so the position lerp runs in the already-updated frame.
+        // (Lerping position in world space while the camera angle also lags causes
+        // the offset vector to rotate each frame, making the player orbit the
+        // screen centre. Lerping in camera-local space keeps the lag axis-aligned
+        // with the camera, eliminating the circular drift.)
         let da = player.angle - camera.angle;
         da -= Math.round(da / (2 * Math.PI)) * 2 * Math.PI;
         camera.angle += da * CAM_ROT_LERP;
+
+        // Position lerp in camera-local space
+        const cos = Math.cos(camera.angle);
+        const sin = Math.sin(camera.angle);
+        const dx  = player.x - camera.x;
+        const dy  = player.y - camera.y;
+        // Project offset onto camera axes and lerp each component
+        const localX = dx * cos + dy * sin;
+        const localY = -dx * sin + dy * cos;
+        const moveX  = localX * CAM_POS_LERP;
+        const moveY  = localY * CAM_POS_LERP;
+        // Rotate correction back to world space and apply
+        camera.x += moveX * cos - moveY * sin;
+        camera.y += moveX * sin + moveY * cos;
 
         // Zoom: canvas height = 2 × interactionRadius, minimum 20 blocks
         const canvasH   = canvasEl.clientHeight || 500;
