@@ -26,10 +26,30 @@
             <div id="drive-status"></div>
         </div>
 
+        <button id="btn-open-editor">&#9998; Build</button>
+
         <!-- Mobile joystick -->
         <div id="joystick-container" class="hidden">
             <div id="joystick-base">
                 <div id="joystick-knob"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ship editor overlay -->
+    <div id="editor-overlay" class="hidden">
+        <div id="editor-panel">
+            <div id="editor-header">
+                <button id="btn-editor-back" class="editor-btn">&#8592; Back</button>
+                <span id="editor-title">Ship Editor</span>
+                <span></span><!-- spacer to centre the title -->
+            </div>
+            <div id="editor-palette"></div>
+            <div id="editor-grid-wrap">
+                <canvas id="editor-canvas"></canvas>
+            </div>
+            <div id="editor-footer">
+                <button id="btn-editor-save" class="editor-btn editor-btn-save">Save &#10003;</button>
             </div>
         </div>
     </div>
@@ -49,6 +69,7 @@
 
     <script src="{{ url_for('static', filename='js/drive.js') }}"></script>
     <script src="{{ url_for('static', filename='js/tiles.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/editor.js') }}"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

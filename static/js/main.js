@@ -34,6 +34,9 @@
         blockMap:  {}         // { "tx,ty": bui }
     });
 
+    // --- Editor state ---
+    let editorOpen = false;
+
     // --- Input state ---
     const keys = {};
     let joystickActive = false;
@@ -104,6 +107,19 @@
             }
         });
 
+        // --- Ship editor ---
+        document.getElementById("btn-open-editor").addEventListener("click", function () {
+            const player = entities.get(playerUID);
+            if (!player) return;
+            editorOpen = true;
+            editor.open(player, tiles.getRegistry(), function (newBlockData, newBlockMap) {
+                player.blockData = newBlockData;
+                player.blockMap  = newBlockMap;
+                tiles.computeEntityProps(player);
+                editorOpen = false;
+            });
+        });
+
         // Save full state when the page is hidden/closed
         window.addEventListener("pagehide", function () {
             if (typeof window.driveSave === "function") {
@@ -148,8 +164,10 @@
 
     // --- Game loop ---
     function gameLoop() {
-        move();
-        tiles.resolveCollisions(entities);
+        if (!editorOpen) {
+            move();
+            tiles.resolveCollisions(entities);
+        }
         tiles.renderBlocks(canvasEl, entities);
         renderEntities();
         updateHUD();
