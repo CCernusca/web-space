@@ -10,9 +10,9 @@
     const ATTRACT_STRENGTH = 0.4; // acceleration at ATTRACT_RADIUS distance
     const WORLD_W    = 500;       // game world width  (px)
     const WORLD_H    = 500;       // game world height (px)
-    const EXPLOSION_STRENGTH     = 500;   // default explosion strength (range = sqrt of this)
-    const EXPLOSION_RAYS         = 360;   // number of raycasted directions
-    const EXPLOSION_DURATION     = 400;   // fireball animation duration (ms)
+    const EXPLOSION_STRENGTH      = 500;   // default explosion strength (range = sqrt of this)
+    const EXPLOSION_RAYS          = 360;   // number of raycasted directions
+    const EXPLOSION_EXPAND_SPEED  = 0.1;  // fireball expansion speed (px/ms) — same for all strengths
     const EXPLOSION_IMPULSE_SCALE = 0.003; // impulse per unit of ray strength at impact
 
     // --- Entity store ---
@@ -333,12 +333,13 @@
     // to zero at the range. Blocks are damaged and pushed; if a block's health is
     // less than the current ray strength it is destroyed and the ray continues.
     function explode(wx, wy, strength) {
-        const range    = Math.sqrt(strength);
-        const rayStep  = tiles.TILE_SIZE / 2;                 // step size (px)
-        const stepAtten = strength * rayStep / range;         // strength lost per step
+        const range     = Math.sqrt(strength);
+        const duration  = range / EXPLOSION_EXPAND_SPEED;    // ms — constant expansion speed
+        const rayStep   = tiles.TILE_SIZE / 2;               // step size (px)
+        const stepAtten = strength * rayStep / range;        // strength lost per step
 
         // Queue a fireball animation
-        activeExplosions.push({ x: wx, y: wy, radius: range, startTime: performance.now() });
+        activeExplosions.push({ x: wx, y: wy, radius: range, duration, startTime: performance.now() });
 
         for (let i = 0; i < EXPLOSION_RAYS; i++) {
             const angle = (i / EXPLOSION_RAYS) * Math.PI * 2;
@@ -395,7 +396,7 @@
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
         activeExplosions = activeExplosions.filter(function (exp) {
-            const t = (now - exp.startTime) / EXPLOSION_DURATION;
+            const t = (now - exp.startTime) / exp.duration;
             if (t >= 1) return false;
 
             const r = exp.radius * t;
