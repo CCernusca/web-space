@@ -686,7 +686,7 @@
     function renderBlocks(canvas, entities, camera) {
         if (!registry) return;
 
-        const dpr = window.devicePixelRatio || 1;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
         const w   = canvas.clientWidth;
         const h   = canvas.clientHeight;
         if (canvas.width  !== Math.round(w * dpr) ||

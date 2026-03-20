@@ -352,7 +352,18 @@ function setupTokenClient() {
 }
 
 function requestDriveLink() {
-    if (tokenClient) tokenClient.requestAccessToken({ prompt: "select_account" });
+    if (!tokenClient) {
+        // GSI library hasn't finished loading yet — give feedback and retry once ready
+        const el = document.getElementById("drive-status");
+        if (el) el.innerHTML = 'Drive: <span class="drive-saving">Loading… tap again shortly</span>';
+        waitForGSI(function () {
+            // tokenClient should now be initialised by setupTokenClient; re-show button
+            if (!tokenClient) setDriveStatus("unlinked");
+            else setDriveStatus("unlinked"); // let user tap again within gesture context
+        });
+        return;
+    }
+    tokenClient.requestAccessToken({ prompt: "select_account" });
 }
 
 function startAutosave() {
