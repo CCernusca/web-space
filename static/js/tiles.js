@@ -36,6 +36,7 @@
     const TILE_SIZE    = 16;             // px per tile cell in entity-local space
     const BASE_MASS    = 1.0;            // mass of a bare entity with no blocks
     const RESTITUTION  = 0.35;           // coefficient of restitution (0=inelastic, 1=elastic)
+    const DAMAGE_SCALE = 1.0;            // damage dealt to each block = j * DAMAGE_SCALE
     const POS_CORRECTION_FACTOR = 0.4;  // fraction of overlap corrected per step (Baumgarte)
     const POS_SLOP              = 0.5;  // overlap tolerance (px) before correction kicks in
     const REGISTRY_KEY = "ws_blockRegistry";
@@ -130,6 +131,17 @@
         delete entity.blockData[bui];
         for (const key of Object.keys(entity.blockMap)) {
             if (entity.blockMap[key] === bui) delete entity.blockMap[key];
+        }
+    }
+
+    // Reduce block health by damage; destroy it (and refresh physics) if health hits zero.
+    function _damageBlock(entity, bui, damage) {
+        const datum = entity.blockData[bui];
+        if (!datum) return;
+        datum.health -= damage;
+        if (datum.health <= 0) {
+            _removeBlock(entity, bui);
+            computeEntityProps(entity);
         }
     }
 
@@ -446,6 +458,11 @@
         // Apply equal-and-opposite impulses at the contact point
         applyImpulse(entityA,  j * nx,  j * ny, cx, cy);
         applyImpulse(entityB, -j * nx, -j * ny, cx, cy);
+
+        // Damage the blocks at the contact point, proportional to impulse magnitude
+        const damage = j * DAMAGE_SCALE;
+        _damageBlock(entityA, contact.buiA, damage);
+        _damageBlock(entityB, contact.buiB, damage);
 
         // Positional correction (Baumgarte): push entities apart to prevent sinking
         const correction = Math.max(contact.overlap - POS_SLOP, 0) * POS_CORRECTION_FACTOR
