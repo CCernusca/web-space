@@ -134,7 +134,7 @@ body {
     border: 1px solid rgba(233, 69, 96, 0.3);
     border-radius: 14px;
     padding: 20px;
-    width: min(96vw, 560px);
+    width: min(96vw, 920px);
     max-height: 94vh;
 }
 

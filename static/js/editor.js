@@ -17,8 +17,8 @@
 (function () {
     "use strict";
 
-    const EDITOR_TILE = 28;           // px per tile in the editor grid
-    const GRID_HALF   = 9;            // tiles from centre to edge
+    const EDITOR_TILE = 16;           // px per tile in the editor grid
+    const GRID_HALF   = 27;           // tiles from centre to edge  →  55×55 grid
     const GRID_SIZE   = GRID_HALF * 2 + 1; // total columns = rows
 
     // Working copies — isolated from the live entity until Save is clicked
