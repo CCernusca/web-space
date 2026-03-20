@@ -196,17 +196,22 @@
         for (const [uid, e] of entities) {
             const isPlayer = uid === playerUID;
 
-            // Player controls add directly to angle and linear velocity
             if (isPlayer) {
-                e.angle += turn * TURN_SPEED;
+                // Fold player turn into angularVelocity so collision response sees it.
+                // "Set not accumulate": player input overrides the control component each
+                // frame; collision-induced spin is preserved but decayed.  This keeps the
+                // same steady-state turn rate (turn * TURN_SPEED rad/frame) without
+                // runaway build-up, and makes resolveContact account for the rotation.
+                e.angularVelocity = turn * TURN_SPEED + e.angularVelocity * ANG_DAMP;
                 const accel = (thrust * THRUST) / e.mass;
                 e.vx += Math.sin(e.angle) * accel;
                 e.vy -= Math.cos(e.angle) * accel;
+            } else {
+                e.angularVelocity *= ANG_DAMP;
             }
 
-            // Integrate collision-induced spin; damp each frame
-            e.angle           += e.angularVelocity;
-            e.angularVelocity *= ANG_DAMP;
+            // Integrate spin and position
+            e.angle += e.angularVelocity;
 
             // Integrate position — no drag, velocity persists
             e.x += e.vx;
