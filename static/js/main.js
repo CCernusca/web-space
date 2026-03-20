@@ -19,7 +19,7 @@
     const CAM_POS_LERP   = 0.08;   // position lag per frame
     const CAM_ROT_LERP   = 0.10;   // rotation lag per frame
     const CAM_ZOOM_LERP  = 0.06;   // zoom lag per frame
-    const CAM_MIN_HEIGHT = 20 * 16; // min visible world-height (20 blocks)
+    const CAM_MIN_HEIGHT = 40 * 16; // min visible world-height (40 blocks)
 
     const camera = { x: WORLD_W / 2, y: WORLD_H / 2, angle: 0, zoom: 1,
                      worldW: WORLD_W, worldH: WORLD_H };

@@ -22,14 +22,9 @@ body {
 /* --- World / Arena --- */
 #world {
     position: absolute;
-    width: 500px;
-    height: 500px;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    inset: 0;
     background-color: #16213e;
     overflow: hidden;
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
 }
 
 /* Block tile canvas — fills the world, sits below entity divs */
