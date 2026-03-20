@@ -12,7 +12,7 @@
     const WORLD_H    = 500;       // game world height (px)
     const EXPLOSION_STRENGTH      = 500;   // default explosion strength (range = sqrt of this)
     const EXPLOSION_RAYS          = 360;   // number of raycasted directions
-    const EXPLOSION_EXPAND_SPEED  = 0.1;  // fireball expansion speed (px/ms) — same for all strengths
+    const EXPLOSION_EXPAND_SPEED  = 0.5;  // fireball expansion speed (px/ms) — same for all strengths
     const EXPLOSION_IMPULSE_SCALE = 0.003; // impulse per unit of ray strength at impact
 
     // --- Entity store ---
@@ -333,10 +333,13 @@
     // to zero at the range. Blocks are damaged and pushed; if a block's health is
     // less than the current ray strength it is destroyed and the ray continues.
     function explode(wx, wy, strength) {
-        const range     = Math.sqrt(strength);
-        const duration  = range / EXPLOSION_EXPAND_SPEED;    // ms — constant expansion speed
-        const rayStep   = tiles.TILE_SIZE / 2;               // step size (px)
-        const stepAtten = strength * rayStep / range;        // strength lost per step
+        const range      = Math.sqrt(strength);
+        const duration   = range / EXPLOSION_EXPAND_SPEED;   // ms — constant expansion speed
+        const rayStep    = tiles.TILE_SIZE / 2;              // step size (px)
+        // Divide strength across all rays so total damage budget equals `strength`,
+        // preventing point-blank blocks from being hit by all EXPLOSION_RAYS simultaneously.
+        const rayStrength = strength / EXPLOSION_RAYS;
+        const stepAtten   = rayStrength * rayStep / range;   // strength lost per step
 
         // Queue a fireball animation
         activeExplosions.push({ x: wx, y: wy, radius: range, duration, startTime: performance.now() });
@@ -345,7 +348,7 @@
             const angle = (i / EXPLOSION_RAYS) * Math.PI * 2;
             const rdx   = Math.cos(angle);
             const rdy   = Math.sin(angle);
-            let currentStrength = strength;
+            let currentStrength = rayStrength;
 
             for (let d = 0; d <= range && currentStrength > 0; d += rayStep) {
                 const px = wx + rdx * d;
