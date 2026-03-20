@@ -195,25 +195,66 @@
     }
 
     // Recompute and write entity.mass, entity.interactionRadius, entity.momentOfInertia.
-    // - mass            = BASE_MASS + Σ block type masses
-    // - interactionRadius = max distance from entity center (local 0,0) to any tile corner
-    // - momentOfInertia = Σ (I_block + m_block * d²) via parallel axis theorem,
-    //                     where d = distance from block center to entity center
+    // Also repositions entity.x/y to the block center of mass and re-keys blockMap so
+    // the CoM is always at local (0,0).  Calling this multiple times is safe (idempotent):
+    // once the origin equals the CoM, the computed shift is zero.
     function computeEntityProps(entity) {
         if (!entity.blockData) { entity.blockData = {}; }
         if (!entity.blockMap)  { entity.blockMap  = {}; }
 
-        let totalMass    = BASE_MASS;
-        let maxRadiusSq  = 0;
-        // Base moment of inertia for the bare hull — assume a point mass at origin
-        let moi          = BASE_MASS * 1;
-
         const anchors = _blockAnchors(entity);
 
-        // Interaction radius: check all 4 corners of every tile cell
-        // Tile (tx,ty) center is at (tx*TS, ty*TS); corners are at ±0.5*TS
+        // --- Pass 1: compute block center of mass in local pixel space ---
+        let blockMassSum = 0;
+        let comLx = 0, comLy = 0;
+
+        for (const [bui, datum] of Object.entries(entity.blockData)) {
+            if (!registry) continue;
+            const type = registry[datum.typeId];
+            if (!type) continue;
+            const m          = type.properties.mass || 0;
+            const { x: w, y: h } = type.properties.size;
+            const anchor     = anchors[bui];
+            if (!anchor) continue;
+            const bcx = (anchor.tx + (w - 1) / 2) * TILE_SIZE;
+            const bcy = (anchor.ty + (h - 1) / 2) * TILE_SIZE;
+            comLx += m * bcx;
+            comLy += m * bcy;
+            blockMassSum += m;
+        }
+
+        if (blockMassSum > 0) {
+            comLx /= blockMassSum;
+            comLy /= blockMassSum;
+        }
+
+        // --- Shift entity origin to CoM (skip if already there) ---
+        if (Math.abs(comLx) > 1e-6 || Math.abs(comLy) > 1e-6) {
+            const cos = Math.cos(entity.angle);
+            const sin = Math.sin(entity.angle);
+            entity.x += comLx * cos - comLy * sin;
+            entity.y += comLx * sin + comLy * cos;
+
+            // Re-key blockMap so CoM = (0,0) in local tile space
+            const dtx = comLx / TILE_SIZE;
+            const dty = comLy / TILE_SIZE;
+            const newMap = {};
+            for (const [posKey, bui] of Object.entries(entity.blockMap)) {
+                const [tx, ty] = posKey.split(",").map(Number);
+                newMap[(tx - dtx) + "," + (ty - dty)] = bui;
+            }
+            entity.blockMap = newMap;
+        }
+
+        // --- Pass 2: compute physics properties from the (now-centered) positions ---
+        const centeredAnchors = _blockAnchors(entity);
+        let totalMass   = BASE_MASS;
+        let maxRadiusSq = 0;
+        let moi         = BASE_MASS; // hull: point mass at origin
+
         for (const posKey of Object.keys(entity.blockMap)) {
             const [tx, ty] = posKey.split(",").map(Number);
+            // Check all 4 corners of this tile cell
             for (let cx = tx; cx <= tx + 1; cx++) {
                 for (let cy = ty; cy <= ty + 1; cy++) {
                     const lx = (cx - 0.5) * TILE_SIZE;
@@ -224,33 +265,25 @@
             }
         }
 
-        // Mass and moment of inertia: one contribution per block instance
         for (const [bui, datum] of Object.entries(entity.blockData)) {
             if (!registry) continue;
             const type = registry[datum.typeId];
             if (!type) continue;
-
-            const m    = type.properties.mass || 0;
+            const m          = type.properties.mass || 0;
             const { x: w, y: h } = type.properties.size;
             totalMass += m;
-
-            const anchor = anchors[bui];
+            const anchor = centeredAnchors[bui];
             if (!anchor) continue;
-
-            // Block center in entity-local space (tile center = tx*TS, ty*TS)
-            const bcx = (anchor.tx + (w - 1) / 2) * TILE_SIZE;
-            const bcy = (anchor.ty + (h - 1) / 2) * TILE_SIZE;
-
-            // Rectangle moment of inertia about its own center
+            const bcx   = (anchor.tx + (w - 1) / 2) * TILE_SIZE;
+            const bcy   = (anchor.ty + (h - 1) / 2) * TILE_SIZE;
             const Iself = m * ((w * TILE_SIZE) ** 2 + (h * TILE_SIZE) ** 2) / 12;
-            // Parallel axis: shift to entity center
-            const d2 = bcx * bcx + bcy * bcy;
+            const d2    = bcx * bcx + bcy * bcy;
             moi += Iself + m * d2;
         }
 
-        entity.mass             = totalMass;
+        entity.mass              = totalMass;
         entity.interactionRadius = Math.sqrt(maxRadiusSq);
-        entity.momentOfInertia  = Math.max(moi, 1); // never zero
+        entity.momentOfInertia   = Math.max(moi, 1);
     }
 
     // =========================================================================
