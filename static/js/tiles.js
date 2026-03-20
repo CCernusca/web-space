@@ -718,7 +718,7 @@
                 const { r, g, b } = type.properties.color;
                 const maxHealth = type.properties.maxHealth || 1;
                 const damage = maxHealth - (datum.health ?? maxHealth);
-                const redAlpha = Math.min(damage / maxHealth, 1) * 0.75;
+                const redAlpha = Math.min(damage / maxHealth, 1) * 0.3;
 
                 const bx = (Number(tx) - 0.5) * TILE_SIZE - ox;
                 const by = (Number(ty) - 0.5) * TILE_SIZE - oy;
