@@ -10,6 +10,10 @@
     const ATTRACT_STRENGTH = 0.4; // acceleration at ATTRACT_RADIUS distance
     const WORLD_W    = 500;       // game world width  (px)
     const WORLD_H    = 500;       // game world height (px)
+    const EXPLOSION_STRENGTH     = 500;   // default explosion strength (range = sqrt of this)
+    const EXPLOSION_RAYS         = 360;   // number of raycasted directions
+    const EXPLOSION_DURATION     = 400;   // fireball animation duration (ms)
+    const EXPLOSION_IMPULSE_SCALE = 0.003; // impulse per unit of ray strength at impact
 
     // --- Entity store ---
     // Each entity: { uid, x, y, vx, vy, angle, angularVelocity,
@@ -39,6 +43,10 @@
     // --- Editor / pause state ---
     let editorOpen = false;
     let paused     = false;
+
+    // --- Explosion state ---
+    let activeExplosions = [];
+    let mouseWorldPos    = null;
 
     // --- Input state ---
     const keys = {};
@@ -233,6 +241,7 @@
             }
         }
         tiles.renderBlocks(canvasEl, entities);
+        renderExplosions();
         renderEntities();
         updateHUD();
         requestAnimationFrame(gameLoop);
@@ -300,6 +309,113 @@
         }
     }
 
+    // --- Explosion ---
+
+    // Convert a world-space point to the tile coordinates of the entity's block grid.
+    function worldToEntityTile(entity, wx, wy) {
+        const cos = Math.cos(entity.angle);
+        const sin = Math.sin(entity.angle);
+        const dx  = wx - entity.x;
+        const dy  = wy - entity.y;
+        const lx  =  dx * cos + dy * sin;
+        const ly  = -dx * sin + dy * cos;
+        const TS  = tiles.TILE_SIZE;
+        const ox  = entity.comOffsetX || 0;
+        const oy  = entity.comOffsetY || 0;
+        return {
+            tx: Math.round((lx + ox) / TS),
+            ty: Math.round((ly + oy) / TS)
+        };
+    }
+
+    // Trigger an explosion at world position (wx, wy) with the given strength.
+    // Range = sqrt(strength). Casts EXPLOSION_RAYS rays, each attenuating linearly
+    // to zero at the range. Blocks are damaged and pushed; if a block's health is
+    // less than the current ray strength it is destroyed and the ray continues.
+    function explode(wx, wy, strength) {
+        const range    = Math.sqrt(strength);
+        const rayStep  = tiles.TILE_SIZE / 2;                 // step size (px)
+        const stepAtten = strength * rayStep / range;         // strength lost per step
+
+        // Queue a fireball animation
+        activeExplosions.push({ x: wx, y: wy, radius: range, startTime: performance.now() });
+
+        for (let i = 0; i < EXPLOSION_RAYS; i++) {
+            const angle = (i / EXPLOSION_RAYS) * Math.PI * 2;
+            const rdx   = Math.cos(angle);
+            const rdy   = Math.sin(angle);
+            let currentStrength = strength;
+
+            for (let d = 0; d <= range && currentStrength > 0; d += rayStep) {
+                const px = wx + rdx * d;
+                const py = wy + rdy * d;
+
+                let blocked = false;
+                for (const entity of entities.values()) {
+                    const { tx, ty } = worldToEntityTile(entity, px, py);
+                    const bui = entity.blockMap[tx + "," + ty];
+                    if (!bui || !entity.blockData[bui]) continue;
+
+                    const blockHealth = entity.blockData[bui].health ?? 0;
+
+                    // Push the block outward proportional to current ray strength
+                    const impulseMag = currentStrength * EXPLOSION_IMPULSE_SCALE;
+                    tiles.applyImpulse(entity, rdx * impulseMag, rdy * impulseMag, px, py);
+
+                    if (blockHealth < currentStrength) {
+                        // Block destroyed — ray continues with reduced strength
+                        tiles.damageBlock(entity, bui, blockHealth);
+                        currentStrength -= blockHealth;
+                    } else {
+                        // Ray absorbed — block takes partial damage and ray ends
+                        tiles.damageBlock(entity, bui, currentStrength);
+                        currentStrength = 0;
+                    }
+                    blocked = true;
+                    break; // only one entity hit per step
+                }
+
+                // Always apply distance attenuation each step
+                currentStrength -= stepAtten;
+                if (blocked && currentStrength <= 0) break;
+            }
+        }
+    }
+
+    // Draw active explosion fireballs onto the world canvas.
+    // Call after tiles.renderBlocks each frame.
+    function renderExplosions() {
+        if (activeExplosions.length === 0) return;
+        const canvas = canvasEl;
+        const ctx    = canvas.getContext("2d");
+        const dpr    = window.devicePixelRatio || 1;
+        const now    = performance.now();
+
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        activeExplosions = activeExplosions.filter(function (exp) {
+            const t = (now - exp.startTime) / EXPLOSION_DURATION;
+            if (t >= 1) return false;
+
+            const r = exp.radius * t;
+            const g = Math.round(255 * (1 - t)); // white → red as t increases
+            const b = Math.round(255 * (1 - t));
+            const a = (1 - t).toFixed(3);
+
+            const grad = ctx.createRadialGradient(exp.x, exp.y, 0, exp.x, exp.y, Math.max(r, 1));
+            grad.addColorStop(0, "rgba(255," + g + "," + b + "," + a + ")");
+            grad.addColorStop(1, "rgba(255," + g + "," + b + ",0)");
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(exp.x, exp.y, Math.max(r, 1), 0, Math.PI * 2);
+            ctx.fill();
+            return true;
+        });
+
+        ctx.restore();
+    }
+
     // --- World-space mouse helpers ---
     function worldPosFromMouseEvent(e) {
         const rect = worldEl.getBoundingClientRect();
@@ -361,6 +477,14 @@
             tiles.addBlock(entity, "cockpit", 0, 0);
             entities.set(uid, entity);
             renderEntities();
+        });
+
+        // Track cursor world position for keyboard-triggered actions (e.g. explosion)
+        worldEl.addEventListener("mousemove", function (e) {
+            mouseWorldPos = worldPosFromMouseEvent(e);
+        });
+        worldEl.addEventListener("mouseleave", function () {
+            mouseWorldPos = null;
         });
 
         // Left-click hold: attract nearby entities toward cursor
@@ -516,6 +640,11 @@
             if (e.key === " ") {
                 e.preventDefault();
                 if (!editorOpen) paused = !paused;
+            }
+            if (e.key.toLowerCase() === "x") {
+                if (!editorOpen && mouseWorldPos && isInsideWorld(mouseWorldPos)) {
+                    explode(mouseWorldPos.x, mouseWorldPos.y, EXPLOSION_STRENGTH);
+                }
             }
             if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(e.key.toLowerCase())) {
                 e.preventDefault();

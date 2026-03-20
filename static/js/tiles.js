@@ -749,6 +749,7 @@
         reconcileBlocks,
         addBlock,
         removeBlock,
+        damageBlock: function (entity, bui, damage) { _damageBlock(entity, bui, damage); },
         computeEntityProps,
         applyDesignChange,
         splitIfDisconnected,
