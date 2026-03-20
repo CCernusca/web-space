@@ -36,6 +36,7 @@ let folderId       = null; // cached after first lookup
 let saveFileId     = null; // cached after first lookup/create
 let autosaveTimer  = null;
 let driveCallbacks = null; // { getState(), setState(state) }
+let reconnectCancelled = false; // set true when user cancels a silent reconnect
 
 // ---- Token persistence (localStorage survives tab/browser close) --
 function storeToken(token, expiresIn) {
@@ -304,6 +305,7 @@ function setDriveStatus(state) {
 }
 
 function driveUnlink() {
+    reconnectCancelled = true;
     if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
     if (accessToken && typeof google !== "undefined") {
         google.accounts.oauth2.revoke(accessToken, function () {});
@@ -330,9 +332,9 @@ function setupTokenClient() {
         scope: DRIVE_SCOPE,
         callback: async function (resp) {
             if (resp.error) { console.error("OAuth error:", resp.error); return; }
-            // If the user cancelled reconnection while the GSI request was in-flight,
-            // consent will have been set to "false" — discard this late token.
-            if (localStorage.getItem("ws_driveConsent") === "false") return;
+            // If the user cancelled a silent reconnect while the GSI request was
+            // in-flight, discard this late token and reset the flag.
+            if (reconnectCancelled) { reconnectCancelled = false; return; }
             storeToken(resp.access_token, resp.expires_in);
             localStorage.setItem("ws_driveConsent", "true");
             setDriveStatus("linked");
@@ -389,6 +391,7 @@ function driveInit(callbacks) {
             startAutosave();
         } else {
             // Token expired — silently re-acquire via GSI hidden iframe (no popup)
+            reconnectCancelled = false;
             setDriveStatus("reconnecting");
             waitForGSI(function () {
                 if (tokenClient) tokenClient.requestAccessToken({ prompt: "" });
