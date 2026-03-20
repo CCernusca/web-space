@@ -5,7 +5,9 @@
     const JOYSTICK_RADIUS = 60;   // half the base diameter (px)
     const THRUST     = 0.25;      // force per frame when W/S held
     const TURN_SPEED = 0.055;     // radians per frame when A/D held
-    const ANG_DAMP   = 0.99;      // angular velocity damping factor per frame
+    const ANG_DAMP       = 0.99;   // angular velocity damping factor per frame
+    const ATTRACT_RADIUS = 200;   // max distance at which attraction acts (px)
+    const ATTRACT_STRENGTH = 0.4; // acceleration at ATTRACT_RADIUS distance
     const WORLD_W    = 500;       // game world width  (px)
     const WORLD_H    = 500;       // game world height (px)
 
@@ -42,6 +44,7 @@
     const keys = {};
     let joystickActive = false;
     let joystickDir = { x: 0, y: 0 }; // normalised -1..1
+    let attractPos  = null;            // world-space cursor pos while LMB held
 
     // --- DOM refs ---
     const worldEl           = document.getElementById("world");
@@ -223,6 +226,18 @@
             if (e.y < margin)             { e.y = margin;             e.vy = Math.max(0, e.vy); }
             if (e.y > WORLD_H - margin)   { e.y = WORLD_H - margin;   e.vy = Math.min(0, e.vy); }
 
+            // Left-click attraction: pull toward cursor, force proportional to distance
+            if (attractPos) {
+                const dx = attractPos.x - e.x;
+                const dy = attractPos.y - e.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > 0 && dist <= ATTRACT_RADIUS) {
+                    const accel = (ATTRACT_STRENGTH * dist / ATTRACT_RADIUS) / e.mass;
+                    e.vx += (dx / dist) * accel;
+                    e.vy += (dy / dist) * accel;
+                }
+            }
+
             // Thruster glow only on the player entity
             if (isPlayer) {
                 const el = document.getElementById("ent-" + uid);
@@ -294,6 +309,21 @@
             tiles.computeEntityProps(entity);
             entities.set(uid, entity);
             renderEntities();
+        });
+
+        // Left-click hold: attract nearby entities toward cursor
+        worldEl.addEventListener("mousedown", function (e) {
+            if (e.button !== 0 || e.ctrlKey || editorOpen) return;
+            const pos = worldPosFromMouseEvent(e);
+            if (isInsideWorld(pos)) attractPos = pos;
+        });
+        worldEl.addEventListener("mousemove", function (e) {
+            if (!attractPos) return;
+            const pos = worldPosFromMouseEvent(e);
+            attractPos = isInsideWorld(pos) ? pos : null;
+        });
+        document.addEventListener("mouseup", function (e) {
+            if (e.button === 0) attractPos = null;
         });
 
         // Ctrl + left-click: take control of entity within interaction radius
