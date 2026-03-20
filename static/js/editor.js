@@ -307,16 +307,24 @@
         };
     }
 
-    function handleClick(e) {
-        if (!canvas || !registry) return;
-        const { col, row } = canvasCoords(e);
-        if (!inBounds(col, row)) return;
+    let dragMode    = null;  // "place" | "erase" | null
+    let dragVisited = null;  // Set of "col,row" strings acted on this drag
+
+    function applyDrag(col, row) {
+        if (!dragMode || !inBounds(col, row)) return;
+        const cellKey = col + "," + row;
+        if (dragVisited.has(cellKey)) return;
+        dragVisited.add(cellKey);
+
         const { tx, ty } = gridToTile(col, row);
-        const key = tx + "," + ty;
-        const existingBui = workingEntity.blockMap[key];
-        if (existingBui !== undefined) {
-            editorEraseBlock(existingBui);
-        } else if (selectedTypeId) {
+        const mapKey     = tx + "," + ty;
+
+        if (dragMode === "erase") {
+            const bui = workingEntity.blockMap[mapKey];
+            if (bui !== undefined) editorEraseBlock(bui);
+        } else {
+            // "place" — skip if occupied or no longer connectable
+            if (workingEntity.blockMap[mapKey] !== undefined) return;
             const type = registry[selectedTypeId];
             const w = type ? type.properties.size.x : 1;
             const h = type ? type.properties.size.y : 1;
@@ -325,17 +333,54 @@
         render();
     }
 
+    function handleMouseDown(e) {
+        if (e.button !== 0 || !canvas || !registry) return;
+        const { col, row } = canvasCoords(e);
+        if (!inBounds(col, row)) { dragMode = null; return; }
+
+        const { tx, ty } = gridToTile(col, row);
+        const mapKey     = tx + "," + ty;
+        const existingBui = workingEntity.blockMap[mapKey];
+
+        if (existingBui !== undefined) {
+            dragMode    = "erase";
+            dragVisited = new Set();
+            applyDrag(col, row);
+        } else if (selectedTypeId) {
+            const type = registry[selectedTypeId];
+            const w = type ? type.properties.size.x : 1;
+            const h = type ? type.properties.size.y : 1;
+            if (isConnected(tx, ty, w, h)) {
+                dragMode    = "place";
+                dragVisited = new Set();
+                applyDrag(col, row);
+            } else {
+                dragMode = null;
+            }
+        } else {
+            dragMode = null;
+        }
+    }
+
     function handleMouseMove(e) {
         if (!canvas) return;
         const { col, row } = canvasCoords(e);
         hoverCol = inBounds(col, row) ? col : null;
         hoverRow = inBounds(col, row) ? row : null;
+        if (e.buttons & 1) applyDrag(col, row);
         render();
     }
 
+    function handleMouseUp() {
+        dragMode    = null;
+        dragVisited = null;
+    }
+
     function handleMouseLeave() {
-        hoverCol = null;
-        hoverRow = null;
+        dragMode    = null;
+        dragVisited = null;
+        hoverCol    = null;
+        hoverRow    = null;
         render();
     }
 
@@ -354,9 +399,11 @@
 
     document.addEventListener("DOMContentLoaded", function () {
         document.getElementById("editor-canvas")
-            .addEventListener("click",      handleClick);
+            .addEventListener("mousedown",  handleMouseDown);
         document.getElementById("editor-canvas")
             .addEventListener("mousemove",  handleMouseMove);
+        document.getElementById("editor-canvas")
+            .addEventListener("mouseup",    handleMouseUp);
         document.getElementById("editor-canvas")
             .addEventListener("mouseleave", handleMouseLeave);
 
