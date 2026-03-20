@@ -1,0 +1,481 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: #1a1a2e;
+    overflow: hidden;
+    font-family: 'Courier New', Courier, monospace;
+    color: #e0e0e0;
+    height: 100vh;
+    width: 100vw;
+}
+
+#game-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* --- World / Arena --- */
+#world {
+    position: absolute;
+    inset: 0;
+    background-color: #16213e;
+    overflow: hidden;
+}
+
+/* Block tile canvas — fills the world, sits below entity divs */
+#world-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    pointer-events: none;
+}
+
+/* --- Entities (dynamically created by main.js) --- */
+.entity {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    z-index: 2;
+}
+
+/* Non-player entities: simple glowing circle */
+.entity:not(.entity--player) {
+    width: 18px;
+    height: 18px;
+    background: #4a9eff;
+    border-radius: 50%;
+    filter: drop-shadow(0 0 5px #4a9eff) drop-shadow(0 0 10px rgba(74, 158, 255, 0.4));
+}
+
+/* Player entity: directional ship arrow */
+.entity--player {
+    width: 28px;
+    height: 36px;
+    background: #e94560;
+    clip-path: polygon(50% 0%, 95% 100%, 50% 76%, 5% 100%);
+    filter: drop-shadow(0 0 6px #e94560) drop-shadow(0 0 14px rgba(233, 69, 96, 0.4));
+    transition: filter 0.1s ease;
+}
+
+.entity--player.entity--moving {
+    filter: drop-shadow(0 0 10px #e94560) drop-shadow(0 0 22px rgba(233, 69, 96, 0.65));
+}
+
+/* --- Build button (top-right of game container) --- */
+#btn-open-editor {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(233, 69, 96, 0.4);
+    border-radius: 8px;
+    color: #e94560;
+    font-family: inherit;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+#btn-open-editor:hover {
+    background: rgba(233, 69, 96, 0.1);
+    border-color: #e94560;
+}
+
+/* --- Mobile right-click mode toggle (below Build button) --- */
+#btn-right-click-mode {
+    position: absolute;
+    top: 58px;
+    right: 16px;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(233, 69, 96, 0.4);
+    border-radius: 8px;
+    color: #e94560;
+    font-family: inherit;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+#btn-right-click-mode.active {
+    background: rgba(233, 69, 96, 0.2);
+    border-color: #e94560;
+    color: #fff;
+}
+
+/* --- Editor overlay --- */
+#editor-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+}
+
+#editor-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: #0f172a;
+    padding: 16px;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+#editor-header {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+}
+
+#editor-title {
+    text-align: center;
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    color: #e0e0e0;
+}
+
+/* Palette bar */
+#editor-palette {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.editor-palette-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 7px 10px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 10px;
+    color: #888;
+    letter-spacing: 0.04em;
+    transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+
+.editor-palette-btn:hover {
+    border-color: rgba(255, 255, 255, 0.25);
+    color: #ccc;
+}
+
+.editor-palette-btn.selected {
+    border-color: #e94560;
+    background: rgba(233, 69, 96, 0.1);
+    color: #e94560;
+}
+
+.palette-swatch {
+    display: block;
+    border-radius: 2px;
+    min-width: 14px;
+    min-height: 14px;
+}
+
+.palette-label {
+    text-transform: capitalize;
+}
+
+/* Grid canvas */
+#editor-grid-wrap {
+    overflow: auto;
+    display: flex;
+    justify-content: center;
+    flex: 1;
+    min-height: 0;
+}
+
+#editor-canvas {
+    display: block;
+    cursor: crosshair;
+    image-rendering: pixelated;
+}
+
+/* Footer */
+#editor-footer {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.editor-btn {
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    color: #888;
+    font-family: inherit;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    padding: 8px 18px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.editor-btn:hover {
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #ccc;
+}
+
+.editor-btn.active {
+    border-color: rgba(255, 255, 255, 0.55);
+    color: #e0e0e0;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.editor-btn-save {
+    border-color: rgba(233, 69, 96, 0.5);
+    color: #e94560;
+}
+
+.editor-btn-save:hover {
+    background: rgba(233, 69, 96, 0.12);
+    border-color: #e94560;
+}
+
+/* --- HUD --- */
+#hud {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 10;
+}
+
+#position-display {
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(233, 69, 96, 0.4);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 14px;
+    display: flex;
+    gap: 16px;
+    letter-spacing: 0.05em;
+}
+
+#position-display span span {
+    color: #e94560;
+    font-weight: bold;
+}
+
+#device-type {
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 12px;
+    color: #aaa;
+    letter-spacing: 0.04em;
+}
+
+#device-type span {
+    color: #e94560;
+    font-weight: bold;
+}
+
+#control-hint {
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 12px;
+    color: #aaa;
+    letter-spacing: 0.04em;
+}
+
+/* --- Joystick --- */
+#joystick-container {
+    position: absolute;
+    bottom: 48px;
+    left: 64px;
+    z-index: 20;
+    touch-action: none;
+}
+
+#joystick-base {
+    width: 120px;
+    height: 120px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 2px solid rgba(233, 69, 96, 0.5);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+#joystick-knob {
+    width: 48px;
+    height: 48px;
+    background: radial-gradient(circle at 35% 35%, #ff6b8a, #e94560);
+    border-radius: 50%;
+    position: absolute;
+    box-shadow: 0 0 10px rgba(233, 69, 96, 0.7);
+    transition: transform 0.05s ease-out;
+    touch-action: none;
+}
+
+/* --- Drive status (HUD row) --- */
+#drive-status {
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 12px;
+    color: #aaa;
+    letter-spacing: 0.04em;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+}
+
+.drive-ok {
+    color: #4caf82;
+    font-weight: bold;
+}
+
+.drive-saving {
+    color: #f0c040;
+    font-weight: bold;
+}
+
+.drive-link-btn {
+    background: none;
+    border: 1px solid rgba(233, 69, 96, 0.6);
+    border-radius: 5px;
+    color: #e94560;
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    padding: 2px 10px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.drive-link-btn:hover {
+    background: rgba(233, 69, 96, 0.15);
+}
+
+.drive-unlink-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.25);
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    padding: 2px 4px;
+    margin-left: 6px;
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.drive-unlink-btn:hover {
+    color: #e94560;
+}
+
+/* --- Modal overlay --- */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(4px);
+}
+
+.modal-box {
+    background: #0f172a;
+    border: 1px solid rgba(233, 69, 96, 0.4);
+    border-radius: 14px;
+    padding: 36px 40px;
+    max-width: 360px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+}
+
+.modal-icon {
+    font-size: 36px;
+    margin-bottom: 12px;
+}
+
+.modal-box h2 {
+    font-size: 18px;
+    color: #e0e0e0;
+    margin-bottom: 10px;
+    letter-spacing: 0.03em;
+}
+
+.modal-box p {
+    font-size: 13px;
+    color: #888;
+    line-height: 1.6;
+    margin-bottom: 24px;
+}
+
+.modal-box code {
+    color: #e94560;
+    background: rgba(233, 69, 96, 0.1);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: inherit;
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+}
+
+.btn-primary {
+    background: #e94560;
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: bold;
+    padding: 10px 24px;
+    cursor: pointer;
+    transition: background 0.15s;
+    letter-spacing: 0.04em;
+}
+
+.btn-primary:hover { background: #c73650; }
+
+.btn-secondary {
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    color: #888;
+    font-family: inherit;
+    font-size: 14px;
+    padding: 10px 24px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    letter-spacing: 0.04em;
+}
+
+.btn-secondary:hover { border-color: #aaa; color: #ccc; }
+
+/* --- Utility --- */
+.hidden {
+    display: none !important;
+}

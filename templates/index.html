@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Webspace</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+    <!-- Google Identity Services (loads async; drive.js polls until ready) -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+    <div id="game-container">
+        <div id="world">
+            <!-- Block tiles are drawn on this canvas (below entity divs) -->
+            <canvas id="world-canvas"></canvas>
+            <!-- Entity divs are created dynamically by main.js -->
+        </div>
+
+        <div id="hud">
+            <div id="position-display">
+                <span>X: <span id="pos-x">0</span></span>
+                <span>Y: <span id="pos-y">0</span></span>
+            </div>
+            <div id="device-type"></div>
+            <div id="control-hint"></div>
+            <div id="drive-status"></div>
+        </div>
+
+        <button id="btn-open-editor">&#9998; Build</button>
+        <button id="btn-right-click-mode" class="hidden">&#128465; Delete</button>
+
+        <!-- Mobile joystick -->
+        <div id="joystick-container" class="hidden">
+            <div id="joystick-base">
+                <div id="joystick-knob"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ship editor overlay -->
+    <div id="editor-overlay" class="hidden">
+        <div id="editor-panel">
+            <div id="editor-header">
+                <button id="btn-editor-back" class="editor-btn">&#8592; Back</button>
+                <span id="editor-title">Ship Editor</span>
+                <div style="display:flex;justify-content:flex-end">
+                    <button id="btn-editor-move" class="editor-btn">&#8597; Move</button>
+                </div>
+            </div>
+            <div id="editor-palette"></div>
+            <div id="editor-grid-wrap">
+                <canvas id="editor-canvas"></canvas>
+            </div>
+            <div id="editor-footer">
+                <button id="btn-editor-save" class="editor-btn editor-btn-save">Save &#10003;</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Drive link modal -->
+    <div id="drive-modal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-icon">&#9729;</div>
+            <h2>Link Google Drive?</h2>
+            <p>Your player position will be saved to <code>/.webspace/save.csv</code> on your Drive and restored every time you return.</p>
+            <div class="modal-buttons">
+                <button id="btn-drive-yes" class="btn-primary">Link Drive</button>
+                <button id="btn-drive-no" class="btn-secondary">Skip</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/drive.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/tiles.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/editor.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
