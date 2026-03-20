@@ -704,6 +704,26 @@
             ctx.rotate(-camera.angle);
             ctx.scale(camera.zoom, camera.zoom);
             ctx.translate(-camera.x, -camera.y);
+
+            // Background world grid — drawn in world space before entities.
+            // Visible region is bounded by a circle of radius = half-diagonal
+            // (conservative, covers all rotations) and clamped to world bounds.
+            const halfDiag = Math.hypot(w, h) / (2 * camera.zoom);
+            const wW = camera.worldW || 0;
+            const wH = camera.worldH || 0;
+            const gx0 = Math.max(0,  Math.floor((camera.x - halfDiag) / TILE_SIZE) * TILE_SIZE);
+            const gx1 = Math.min(wW, Math.ceil( (camera.x + halfDiag) / TILE_SIZE) * TILE_SIZE);
+            const gy0 = Math.max(0,  Math.floor((camera.y - halfDiag) / TILE_SIZE) * TILE_SIZE);
+            const gy1 = Math.min(wH, Math.ceil( (camera.y + halfDiag) / TILE_SIZE) * TILE_SIZE);
+
+            ctx.save();
+            ctx.strokeStyle = "rgba(255,255,255,0.06)";
+            ctx.lineWidth   = 1 / camera.zoom;
+            ctx.beginPath();
+            for (let x = gx0; x <= gx1; x += TILE_SIZE) { ctx.moveTo(x, gy0); ctx.lineTo(x, gy1); }
+            for (let y = gy0; y <= gy1; y += TILE_SIZE) { ctx.moveTo(gx0, y); ctx.lineTo(gx1, y); }
+            ctx.stroke();
+            ctx.restore();
         }
 
         for (const entity of entities.values()) {

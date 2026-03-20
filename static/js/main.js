@@ -21,7 +21,8 @@
     const CAM_ZOOM_LERP  = 0.06;   // zoom lag per frame
     const CAM_MIN_HEIGHT = 20 * 16; // min visible world-height (20 blocks)
 
-    const camera = { x: WORLD_W / 2, y: WORLD_H / 2, angle: 0, zoom: 1 };
+    const camera = { x: WORLD_W / 2, y: WORLD_H / 2, angle: 0, zoom: 1,
+                     worldW: WORLD_W, worldH: WORLD_H };
 
     function updateCamera() {
         const player = entities.get(playerUID);
