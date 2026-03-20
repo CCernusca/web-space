@@ -352,7 +352,7 @@ function setupTokenClient() {
 }
 
 function requestDriveLink() {
-    if (tokenClient) tokenClient.requestAccessToken({ prompt: "" });
+    if (tokenClient) tokenClient.requestAccessToken({ prompt: "select_account" });
 }
 
 function startAutosave() {
