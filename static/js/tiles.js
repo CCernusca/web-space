@@ -683,7 +683,7 @@
     // Each tile position in entity.blockMap gets a TILE_SIZE × TILE_SIZE rectangle
     // coloured by its block type.  The entity's (x, y) and angle are applied so
     // blocks rotate and translate with the entity.
-    function renderBlocks(canvas, entities) {
+    function renderBlocks(canvas, entities, camera) {
         if (!registry) return;
 
         const dpr = window.devicePixelRatio || 1;
@@ -698,6 +698,13 @@
         const ctx = canvas.getContext("2d");
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, w, h);
+
+        if (camera) {
+            ctx.translate(w / 2, h / 2);
+            ctx.rotate(-camera.angle);
+            ctx.scale(camera.zoom, camera.zoom);
+            ctx.translate(-camera.x, -camera.y);
+        }
 
         for (const entity of entities.values()) {
             const map = entity.blockMap;

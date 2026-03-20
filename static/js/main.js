@@ -8,12 +8,64 @@
     const ANG_DAMP       = 1.0;    // angular velocity damping factor per frame (1.0 = no drag)
     const ATTRACT_RADIUS = 200;   // max distance at which attraction acts (px)
     const ATTRACT_STRENGTH = 0.4; // acceleration at ATTRACT_RADIUS distance
-    const WORLD_W    = 500;       // game world width  (px)
-    const WORLD_H    = 500;       // game world height (px)
+    const WORLD_W    = 10000;     // game world width  (px)
+    const WORLD_H    = 10000;     // game world height (px)
     const EXPLOSION_STRENGTH      = 5000;   // default explosion strength (range = sqrt of this)
     const EXPLOSION_RAYS          = 360;   // number of raycasted directions
     const EXPLOSION_EXPAND_SPEED  = 0.5;  // fireball expansion speed (px/ms) — same for all strengths
     const EXPLOSION_IMPULSE_SCALE = 0.1; // impulse per unit of ray strength at impact
+
+    // --- Camera ---
+    const CAM_POS_LERP   = 0.08;   // position lag per frame
+    const CAM_ROT_LERP   = 0.10;   // rotation lag per frame
+    const CAM_ZOOM_LERP  = 0.06;   // zoom lag per frame
+    const CAM_MIN_HEIGHT = 20 * 16; // min visible world-height (20 blocks)
+
+    const camera = { x: WORLD_W / 2, y: WORLD_H / 2, angle: 0, zoom: 1 };
+
+    function updateCamera() {
+        const player = entities.get(playerUID);
+        if (!player) return;
+
+        camera.x += (player.x - camera.x) * CAM_POS_LERP;
+        camera.y += (player.y - camera.y) * CAM_POS_LERP;
+
+        // Shortest-path angle lerp
+        let da = player.angle - camera.angle;
+        da -= Math.round(da / (2 * Math.PI)) * 2 * Math.PI;
+        camera.angle += da * CAM_ROT_LERP;
+
+        // Zoom: canvas height = 2 × interactionRadius, minimum 20 blocks
+        const canvasH   = canvasEl.clientHeight || 500;
+        const worldH    = Math.max(2 * (player.interactionRadius || 0), CAM_MIN_HEIGHT);
+        const targetZoom = canvasH / worldH;
+        camera.zoom += (targetZoom - camera.zoom) * CAM_ZOOM_LERP;
+    }
+
+    // Convert client/screen coordinates to world coordinates via camera.
+    function screenToWorld(clientX, clientY) {
+        const rect = worldEl.getBoundingClientRect();
+        const dx = (clientX - rect.left) - rect.width  / 2;
+        const dy = (clientY - rect.top)  - rect.height / 2;
+        const ux = dx / camera.zoom;
+        const uy = dy / camera.zoom;
+        const cos = Math.cos(camera.angle);
+        const sin = Math.sin(camera.angle);
+        return { x: camera.x + ux * cos - uy * sin,
+                 y: camera.y + ux * sin + uy * cos };
+    }
+
+    // Convert world coordinates to CSS pixels relative to worldEl.
+    function worldToScreen(wx, wy) {
+        const w   = worldEl.clientWidth;
+        const h   = worldEl.clientHeight;
+        const dx  = wx - camera.x;
+        const dy  = wy - camera.y;
+        const cos = Math.cos(-camera.angle);
+        const sin = Math.sin(-camera.angle);
+        return { x: w / 2 + (dx * cos - dy * sin) * camera.zoom,
+                 y: h / 2 + (dx * sin + dy * cos) * camera.zoom };
+    }
 
     // --- Entity store ---
     // Each entity: { uid, x, y, vx, vy, angle, angularVelocity,
@@ -178,9 +230,10 @@
         for (const [uid, e] of entities) {
             const el = getOrCreateEntityEl(uid);
             el.classList.toggle("entity--player", uid === playerUID);
-            el.style.left      = e.x + "px";
-            el.style.top       = e.y + "px";
-            el.style.transform = "translate(-50%, -50%) rotate(" + e.angle + "rad)";
+            const { x: sx, y: sy } = worldToScreen(e.x, e.y);
+            el.style.left      = sx + "px";
+            el.style.top       = sy + "px";
+            el.style.transform = `translate(-50%,-50%) rotate(${e.angle - camera.angle}rad) scale(${camera.zoom})`;
         }
         // Remove elements for entities that no longer exist
         for (const el of worldEl.querySelectorAll(".entity")) {
@@ -284,7 +337,8 @@
             }
             pendingExplosionImpulses = [];
         }
-        tiles.renderBlocks(canvasEl, entities);
+        updateCamera();
+        tiles.renderBlocks(canvasEl, entities, camera);
         renderExplosions();
         renderEntities();
         updateHUD();
@@ -446,8 +500,14 @@
         const dpr    = window.devicePixelRatio || 1;
         const now    = performance.now();
 
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
         ctx.save();
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.translate(w / 2, h / 2);
+        ctx.rotate(-camera.angle);
+        ctx.scale(camera.zoom, camera.zoom);
+        ctx.translate(-camera.x, -camera.y);
 
         activeExplosions = activeExplosions.filter(function (exp) {
             const t = (now - exp.startTime) / exp.duration;
@@ -473,11 +533,7 @@
 
     // --- World-space mouse helpers ---
     function worldPosFromMouseEvent(e) {
-        const rect = worldEl.getBoundingClientRect();
-        return {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top
-        };
+        return screenToWorld(e.clientX, e.clientY);
     }
 
     function isInsideWorld(pos) {
@@ -586,11 +642,7 @@
 
     // --- World touch (Mobile) ---
     function worldPosFromTouch(touch) {
-        const rect = worldEl.getBoundingClientRect();
-        return {
-            x: touch.clientX - rect.left,
-            y: touch.clientY - rect.top
-        };
+        return screenToWorld(touch.clientX, touch.clientY);
     }
 
     function applyRightClickAt(pos) {
