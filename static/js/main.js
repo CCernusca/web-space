@@ -4,7 +4,7 @@
     // --- Config ---
     const JOYSTICK_RADIUS = 60;   // half the base diameter (px)
     const THRUST     = 0.6;       // force per frame when W/S held
-    const TURN_SPEED = 0.055;     // radians per frame when A/D held
+    const TURN_SPEED = 0.025;     // radians per frame when A/D held
     const ANG_DAMP       = 1.0;    // angular velocity damping factor per frame (1.0 = no drag)
     const ATTRACT_RADIUS = 200;   // max distance at which attraction acts (px)
     const ATTRACT_STRENGTH = 0.4; // acceleration at ATTRACT_RADIUS distance
