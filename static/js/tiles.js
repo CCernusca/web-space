@@ -840,15 +840,15 @@
                 const rcx = bx + (xv + wv / 2) * TS;
                 const rcy = by + (yv + hv_r / 2) * TS;
                 const hw = wv * TS / 2, hh = hv_r * TS / 2;
-                const dynColor = typeof crP === "function" || typeof cgP === "function" ||
-                                 typeof cbP === "function" || typeof caP === "function";
-                if (!dynColor) {
+                const dynRGB = typeof crP === "function" || typeof cgP === "function" || typeof cbP === "function";
+                if (!dynRGB) {
                     const cr = ev(crP, 0, 0), cg = ev(cgP, 0, 0), cb = ev(cbP, 0, 0);
                     const ca = caP !== undefined ? ev(caP, 0, 0) : 1;
                     ctx.save();
                     ctx.translate(rcx, rcy);
                     ctx.rotate(angle);
-                    ctx.fillStyle = "rgba(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + "," + ca + ")";
+                    ctx.globalAlpha = Math.min(1, Math.max(0, ca));
+                    ctx.fillStyle = "rgb(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + ")";
                     ctx.fillRect(-hw, -hh, wv * TS, hv_r * TS);
                     ctx.restore();
                 } else {
@@ -874,15 +874,17 @@
                 const [cxP, cyP, radiusP, rotP, crP, cgP, cbP, caP] = params;
                 const cxv = ev(cxP, 0, 0), cyv = ev(cyP, 0, 0), rv = ev(radiusP, 0, 0);
                 const ccx = bx + cxv * TS, ccy = by + cyv * TS, rPx = rv * TS;
-                const dynColor = typeof crP === "function" || typeof cgP === "function" ||
-                                 typeof cbP === "function" || typeof caP === "function";
-                if (!dynColor) {
+                const dynRGB = typeof crP === "function" || typeof cgP === "function" || typeof cbP === "function";
+                if (!dynRGB) {
                     const cr = ev(crP, 0, 0), cg = ev(cgP, 0, 0), cb = ev(cbP, 0, 0);
                     const ca = caP !== undefined ? ev(caP, 0, 0) : 1;
-                    ctx.fillStyle = "rgba(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + "," + ca + ")";
+                    ctx.save();
+                    ctx.globalAlpha = Math.min(1, Math.max(0, ca));
+                    ctx.fillStyle = "rgb(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + ")";
                     ctx.beginPath();
                     ctx.arc(ccx, ccy, rPx, 0, Math.PI * 2);
                     ctx.fill();
+                    ctx.restore();
                 } else {
                     const x0 = Math.floor(ccx - rPx), y0 = Math.floor(ccy - rPx);
                     const W = Math.ceil(ccx + rPx) - x0, H = Math.ceil(ccy + rPx) - y0;
