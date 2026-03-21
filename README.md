@@ -161,6 +161,11 @@ r:0:0:1:1:0:x:y:0               gradient: red increases leftâ†’right, green topâ
 r:0:0:1:1:0:0.5+0.5*sin(t):0:0  rectangle that pulses red over time
 ```
 
+Currently, cockpits (their rectangular base) rotate when taking damage:
+```
+r:0:0:1:1:0.05*(1-h):0.24:0.63:0.78,c:0.5:0.5:0.3:0:0.6:0.88:1.0
+```
+
 ### Persistence
 
 Game state is serialized to JSON and stored in Google Drive under `/.webspace/save.json`. The save includes all entity positions, velocities, angles, and complete block data for every entity. Autosave triggers every 30 seconds and on page hide/close.

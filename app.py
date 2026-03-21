@@ -20,6 +20,11 @@ app = Flask(__name__)
 # rot is 0–1 (0=0°, 0.5=180°, 1=360°); any value is modulo'd into range.
 # Alpha (ca) is optional and defaults to 1.
 # When x or y are used in color fields, shapes are rendered pixel-by-pixel (slow path).
+# 
+# PERFORMANCE WARNING: using x, y, t, or h in color fields triggers a per-pixel
+# slow path (OffscreenCanvas pixel loop) instead of a single fillRect/arc call.
+# This runs in JS for every pixel of every affected shape every frame. Use
+# sparingly — large shapes, many blocks, or high display DPI will tank frame rate.
 BLOCK_REGISTRY = {
     "hull_light": {
         "properties": {
@@ -65,7 +70,7 @@ BLOCK_REGISTRY = {
             "id": "cockpit",
             "size": {"x": 1, "y": 1},
             "color": {"r": 60, "g": 160, "b": 200},
-            "shapes": "r:0:0:1:1:0:0.24:0.63:0.78,c:0.5:0.5:0.3:0:0.6:0.88:1.0",
+            "shapes": "r:0:0:1:1:0.05*(1-h):0.24:0.63:0.78,c:0.5:0.5:0.3:0:0.6:0.88:1.0",
             "maxHealth": 800,
             "mass": 3,
         },
