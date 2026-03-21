@@ -694,8 +694,10 @@
     // Parse a comma-separated shapes string into an array of {id, params} objects.
     // Shape format: "<id>:<expr>:<expr>:..." where coordinates/sizes are in tiles (1=one tile)
     // and colors are in 0–1 range.  Each parameter may be a plain number or a math expression
-    // (evaluated each render cycle).  Available in expressions: sin cos tan abs sqrt pow log
-    // floor ceil round min max PI E t (t = seconds since page load).
+    // (evaluated each render cycle).
+    // Available functions/constants: sin cos tan abs sqrt pow log floor ceil round min max PI E
+    // Available operators:  + - * / % (modulo) ** (exponent)
+    // Available variables:  t (seconds since page load)  h (health/maxHealth, 0–1)
     // Supported shapes:
     //   r:x:y:w:h:cr:cg:cb[:ca]  — filled rectangle
     //   c:cx:cy:radius:cr:cg:cb[:ca] — filled circle
@@ -711,12 +713,12 @@
                 if (!isNaN(n)) return n; // plain number — fast path
                 // Math expression — compile once, evaluate each frame
                 try {
-                    return new Function("_m", "_t",
+                    return new Function("_m", "_t", "_h",
                         "\"use strict\";" +
                         "var sin=_m.sin,cos=_m.cos,tan=_m.tan,abs=_m.abs," +
                         "sqrt=_m.sqrt,pow=_m.pow,log=_m.log,floor=_m.floor," +
                         "ceil=_m.ceil,round=_m.round,min=_m.min,max=_m.max," +
-                        "PI=_m.PI,E=_m.E,t=_t;" +
+                        "PI=_m.PI,E=_m.E,t=_t,h=_h;" +
                         "return (" + token + ");");
                 } catch (e) {
                     console.warn("shapes: bad expression \"" + token + "\":", e.message);
@@ -730,14 +732,15 @@
 
     // Draw parsed shapes onto ctx, with block origin at (bx, by) and TS pixels per tile.
     // Optional alpha (0–1) applied via globalAlpha.
-    // Math-expression params are evaluated with the current time (seconds since page load).
-    function drawShapes(ctx, shapes, bx, by, TS, alpha) {
+    // Math-expression params are evaluated with the current time and health ratio.
+    function drawShapes(ctx, shapes, bx, by, TS, alpha, h) {
         const t = performance.now() / 1000;
+        const hv = (h !== undefined) ? h : 1;
         const prevAlpha = ctx.globalAlpha;
         if (alpha !== undefined) ctx.globalAlpha = alpha;
         for (const { id, params } of shapes) {
             const nums = params.map(function (p) {
-                return typeof p === "function" ? p(Math, t) : p;
+                return typeof p === "function" ? p(Math, t, hv) : p;
             });
             if (id === "r") {
                 const [x, y, w, h, cr, cg, cb, ca = 1] = nums;
@@ -837,16 +840,18 @@
                 const bx = (anchor.tx - 0.5) * TILE_SIZE - ox;
                 const by = (anchor.ty - 0.5) * TILE_SIZE - oy;
 
+                const maxHealth = type.properties.maxHealth || 1;
+                const h = (datum.health ?? maxHealth) / maxHealth;
+
                 const shapes = parseShapes(type.properties.shapes);
                 if (shapes) {
-                    drawShapes(ctx, shapes, bx, by, TILE_SIZE);
+                    drawShapes(ctx, shapes, bx, by, TILE_SIZE, undefined, h);
                 } else {
                     const { r, g, b } = type.properties.color;
                     ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
                     ctx.fillRect(bx, by, bw, bh);
                 }
 
-                const maxHealth = type.properties.maxHealth || 1;
                 const damage = maxHealth - (datum.health ?? maxHealth);
                 const redAlpha = Math.min(damage / maxHealth, 1) * 0.3;
                 if (redAlpha > 0) {
