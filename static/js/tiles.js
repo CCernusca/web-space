@@ -163,7 +163,8 @@
         if (!datum) return;
         datum.health -= damage;
         if (datum.health <= 0) {
-            // Notify callbacks before removing the block
+            // Gather callback data before removing the block
+            let cbWx = null, cbWy = null, cbTypeProps = null, cbColor = null;
             if (registry) {
                 let anchorTx = null, anchorTy = null;
                 for (const [key, b] of Object.entries(entity.blockMap)) {
@@ -178,15 +179,22 @@
                 if (anchorTx !== null && type) {
                     const { x: sw, y: sh } = type.properties.size;
                     const [wx, wy] = _tileWorldCenter(anchorTx + (sw - 1) / 2, anchorTy + (sh - 1) / 2, entity);
-                    if (typeof window._particleOnBlockDestroyed === "function")
-                        window._particleOnBlockDestroyed(wx, wy, _firstShapeColor(type));
-                    if (typeof window._onBlockDestroyed === "function")
-                        window._onBlockDestroyed(wx, wy, type.properties);
+                    cbWx = wx; cbWy = wy;
+                    cbTypeProps = type.properties;
+                    cbColor = _firstShapeColor(type);
                 }
             }
+            // Remove block first so death-explosion cannot re-trigger destruction
             _removeBlock(entity, bui);
             computeEntityProps(entity);
             entity._pendingSplit = true;
+            // Notify callbacks after the block is gone
+            if (cbWx !== null) {
+                if (typeof window._particleOnBlockDestroyed === "function")
+                    window._particleOnBlockDestroyed(cbWx, cbWy, cbColor);
+                if (typeof window._onBlockDestroyed === "function")
+                    window._onBlockDestroyed(cbWx, cbWy, cbTypeProps);
+            }
         }
     }
 
