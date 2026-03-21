@@ -162,6 +162,109 @@
         }
     }
 
+    // --- Projectile state ---
+    // Each projectile: { x, y, vx, vy, angle, impactDamage, pierce, explosionStrength,
+    //                    lifetime, remaining, shapes, shapeStr,
+    //                    spawnerKey, particleInterval, _nextParticle }
+    // vx/vy in px/frame. angle is fixed at spawn (atan2(vy, vx)) and used for rendering.
+    // Named spawner functions are registered in projectileSpawners by key so they can be
+    // referenced by name in saves.
+    const projectiles = [];
+    const projectileSpawners = {}; // name → function(x, y, vx, vy)
+
+    function spawnProjectile(x, y, vx, vy, impactDamage, pierce, explosionStrength,
+                             lifetime, shapeStr, spawnerKey, particleInterval) {
+        projectiles.push({
+            x, y, vx, vy,
+            angle:            Math.atan2(vy, vx),
+            impactDamage, pierce, explosionStrength,
+            lifetime,         remaining: lifetime,
+            shapes:           tiles.parseShapes(shapeStr),
+            shapeStr,
+            spawnerKey:       spawnerKey || null,
+            particleInterval: particleInterval || 0,
+            _nextParticle:    0,
+        });
+    }
+
+    function updateProjectiles(dtSec) {
+        const stepSize = tiles.TILE_SIZE / 2; // march in half-tile steps
+        for (let pi = projectiles.length - 1; pi >= 0; pi--) {
+            const p = projectiles[pi];
+
+            // Particle trail spawning
+            if (p.spawnerKey && p.particleInterval > 0) {
+                p._nextParticle -= dtSec;
+                if (p._nextParticle <= 0) {
+                    const fn = projectileSpawners[p.spawnerKey];
+                    if (fn) fn(p.x, p.y, p.vx, p.vy);
+                    p._nextParticle += p.particleInterval;
+                }
+            }
+
+            // Lifetime
+            p.remaining -= dtSec;
+            if (p.remaining <= 0) { projectiles.splice(pi, 1); continue; }
+
+            // March from current position toward next, checking blocks each step
+            const dist  = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+            const steps = Math.max(1, Math.ceil(dist / stepSize));
+            const sx    = p.vx / steps;
+            const sy    = p.vy / steps;
+
+            let destroyed = false;
+            const hitBuis = new Set(); // avoid double-hitting one block per frame
+            for (let s = 0; s < steps && !destroyed; s++) {
+                const cx = p.x + sx * (s + 1);
+                const cy = p.y + sy * (s + 1);
+                for (const entity of entities.values()) {
+                    const { tx, ty } = worldToEntityTile(entity, cx, cy);
+                    const bui = entity.blockMap[tx + "," + ty];
+                    if (!bui || !entity.blockData[bui] || hitBuis.has(bui)) continue;
+                    hitBuis.add(bui);
+
+                    tiles.damageBlock(entity, bui, p.impactDamage);
+                    const pierced = Math.random() < p.pierce;
+                    if (!pierced) {
+                        if (p.explosionStrength > 0) explode(cx, cy, p.explosionStrength);
+                        projectiles.splice(pi, 1);
+                        destroyed = true;
+                    }
+                    break; // one entity per step
+                }
+            }
+
+            if (!destroyed) {
+                p.x += p.vx;
+                p.y += p.vy;
+            }
+        }
+    }
+
+    function renderProjectiles() {
+        if (projectiles.length === 0) return;
+        const ctx = canvasEl.getContext("2d");
+        const dpr = window.devicePixelRatio || 1;
+        const w   = canvasEl.clientWidth;
+        const h   = canvasEl.clientHeight;
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.translate(w / 2, h / 2);
+        ctx.rotate(-camera.angle);
+        ctx.scale(camera.zoom, camera.zoom);
+        ctx.translate(-camera.x, -camera.y);
+        for (const p of projectiles) {
+            if (!p.shapes) continue;
+            const hv = p.remaining / p.lifetime;
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.angle); // orient shape along velocity direction
+            tiles.drawShapes(ctx, p.shapes, 0, 0, tiles.TILE_SIZE, 1, hv);
+            ctx.restore();
+        }
+        ctx.restore();
+    }
+
     // --- Input state ---
     const keys = {};
     let joystickActive = false;
@@ -230,7 +333,8 @@
             getState: function () {
                 return {
                     playerUID,
-                    entities: Array.from(entities.values())
+                    entities:    Array.from(entities.values()),
+                    projectiles: projectiles.slice()
                 };
             },
             setState: function (state) {
@@ -246,6 +350,14 @@
                     tiles.reconcileBlocks(entity); // also calls computeEntityProps
                 }
                 playerUID = state.playerUID;
+                // Restore projectiles; each entry is the plain saved object from drive.js
+                projectiles.length = 0;
+                for (const p of state.projectiles || []) {
+                    spawnProjectile(p.x, p.y, p.vx, p.vy,
+                        p.impactDamage, p.pierce, p.explosionStrength,
+                        p.lifetime, p.shapeStr, p.spawnerKey, p.particleInterval);
+                    projectiles[projectiles.length - 1].remaining = p.remaining;
+                }
                 renderEntities();
                 updateHUD();
             }
@@ -270,6 +382,12 @@
                 editorOpen = false;
             });
         });
+
+        // --- Projectile spawner registry ---
+        // white_glow: fading white circle trail used by the test projectile (P key)
+        projectileSpawners["white_glow"] = function (x, y, vx, vy) {
+            spawnParticle(x, y, vx * 0.05, vy * 0.05, 0.6, "c:0:0:0.25:0:1:1:1:h");
+        };
 
         // Spawn debris particles when a block is destroyed
         window._particleOnBlockDestroyed = function (wx, wy, color) {
@@ -434,6 +552,7 @@
                 : 0;
             lastParticleUpdateTime = timestamp;
             updateParticles(dtSec);
+            updateProjectiles(dtSec);
         } else {
             lastParticleUpdateTime = 0; // reset so first frame after unpause has no jump
         }
@@ -441,6 +560,7 @@
         updateCamera();
         tiles.renderBlocks(canvasEl, entities, camera);
         renderParticles();
+        renderProjectiles();
         renderExplosions();
         renderEntities();
         updateHUD();
@@ -877,6 +997,25 @@
             if (e.key.toLowerCase() === "x") {
                 if (!editorOpen && mouseWorldPos && isInsideWorld(mouseWorldPos)) {
                     explode(mouseWorldPos.x, mouseWorldPos.y, EXPLOSION_STRENGTH);
+                }
+            }
+            if (e.key.toLowerCase() === "p") {
+                if (!editorOpen && mouseWorldPos && isInsideWorld(mouseWorldPos)) {
+                    const player = entities.get(playerUID);
+                    // Velocity faces the player entity's forward direction, or camera up if free cam
+                    const angle  = player ? player.angle : camera.angle;
+                    const speed  = 10; // px/frame
+                    spawnProjectile(
+                        mouseWorldPos.x, mouseWorldPos.y,
+                        Math.sin(angle) * speed, -Math.cos(angle) * speed,
+                        1000,           // impactDamage
+                        0.5,            // pierce chance
+                        1000,           // explosionStrength
+                        3,              // lifetime (seconds)
+                        "r:-0.375:-0.1:0.75:0.2:0:1:1:0:1", // bright yellow elongated rect
+                        "white_glow",   // particle spawner key
+                        0.5             // particleInterval (seconds)
+                    );
                 }
             }
             if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(e.key.toLowerCase())) {
