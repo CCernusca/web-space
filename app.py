@@ -78,6 +78,32 @@ BLOCK_REGISTRY = {
             "health": 800,
         },
     },
+    "cannon": {
+        "properties": {
+            "id": "cannon",
+            "size": {"x": 1, "y": 1},
+            "color": {"r": 160, "g": 110, "b": 55},
+            # Dark base, lower body, barrel pointing up (toward ty-1 in editor)
+            "shapes": "r:0:0:1:1:0:0.22:0.18:0.12,r:0.1:0.45:0.8:0.5:0:0.5:0.38:0.2,r:0.33:0:0.34:0.5:0:0.6:0.44:0.22",
+            "maxHealth": 600,
+            "mass": 8,
+            "deathExplosion": 5000,
+            "projectile": {
+                "speed": 10,
+                "impactDamage": 1000,
+                "pierce": 0.5,
+                "explosionStrength": 1000,
+                "lifetime": 3,
+                "shapeStr": "r:-0.375:-0.1:0.75:0.2:0:1:1:0:1",
+                "spawnerKey": "white_glow",
+                "particleInterval": 0.1,
+                "blowback": 80,
+            },
+        },
+        "data": {
+            "health": 600,
+        },
+    },
 }
 
 

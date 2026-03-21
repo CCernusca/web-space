@@ -110,7 +110,7 @@ async function findSaveFile() {
 }
 
 // ---- JSON serialisation -------------------------------------------
-function formatSave(playerUID, entities) {
+function formatSave(playerUID, entities, projectiles) {
     // blockData and blockMap are already part of each entity object.
     // Round physics values to keep the file compact.
     const slim = entities.map(function (e) {
@@ -128,7 +128,23 @@ function formatSave(playerUID, entities) {
             blockMap:        e.blockMap  || {}
         };
     });
-    return JSON.stringify({ playerUID, entities: slim });
+    const slimProj = (projectiles || []).map(function (p) {
+        return {
+            x:                parseFloat(p.x.toFixed(2)),
+            y:                parseFloat(p.y.toFixed(2)),
+            vx:               parseFloat(p.vx.toFixed(4)),
+            vy:               parseFloat(p.vy.toFixed(4)),
+            impactDamage:     p.impactDamage,
+            pierce:           parseFloat(p.pierce.toFixed(4)),
+            explosionStrength: p.explosionStrength,
+            lifetime:         parseFloat(p.lifetime.toFixed(4)),
+            remaining:        parseFloat(p.remaining.toFixed(4)),
+            shapeStr:         p.shapeStr,
+            spawnerKey:       p.spawnerKey || null,
+            particleInterval: p.particleInterval
+        };
+    });
+    return JSON.stringify({ playerUID, entities: slim, projectiles: slimProj });
 }
 
 // Parse a save file.  Handles:
@@ -220,8 +236,8 @@ async function driveSave(keepalive = false) {
     if (!driveCallbacks || !driveCallbacks.getState) return;
 
     setDriveStatus("saving");
-    const { playerUID, entities } = driveCallbacks.getState();
-    const content     = formatSave(playerUID, entities);
+    const { playerUID, entities, projectiles } = driveCallbacks.getState();
+    const content     = formatSave(playerUID, entities, projectiles);
     const contentType = "application/json";
 
     try {
