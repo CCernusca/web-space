@@ -363,6 +363,7 @@ function requestDriveLink() {
         });
         return;
     }
+    reconnectCancelled = false;
     tokenClient.requestAccessToken({ prompt: "select_account" });
 }
 
