@@ -361,6 +361,7 @@
             }
             pendingExplosionImpulses = [];
         }
+        tiles.setShapePaused(editorOpen || paused);
         updateCamera();
         tiles.renderBlocks(canvasEl, entities, camera);
         renderExplosions();

@@ -39,22 +39,45 @@
     const DAMAGE_SCALE = 1.0;            // damage dealt to each block = j * DAMAGE_SCALE
     const POS_CORRECTION_FACTOR = 0.4;  // fraction of overlap corrected per step (Baumgarte)
     const POS_SLOP              = 0.5;  // overlap tolerance (px) before correction kicks in
-    const REGISTRY_KEY = "ws_blockRegistry";
+    const REGISTRY_KEY = "ws_blockRegistry_v2";
     const REGISTRY_URL = "/api/block-registry";
 
     let registry = null; // { [typeId]: { properties, data } }
+
+    // Shape animation time — advances only when not paused.
+    let _shapeTime      = 0;
+    let _shapeRunning   = true;
+    let _shapeWallStart = performance.now() / 1000;
+
+    function setShapePaused(paused) {
+        if (paused && _shapeRunning) {
+            _shapeTime   += performance.now() / 1000 - _shapeWallStart;
+            _shapeRunning  = false;
+        } else if (!paused && !_shapeRunning) {
+            _shapeWallStart = performance.now() / 1000;
+            _shapeRunning   = true;
+        }
+    }
 
     // =========================================================================
     // Registry loading
     // =========================================================================
 
-    // Load registry from localStorage; if absent, fetch from server.
+    // Load registry from localStorage; if absent or outdated, fetch from server.
     async function initRegistry() {
         const cached = localStorage.getItem(REGISTRY_KEY);
         if (cached) {
             try {
-                registry = JSON.parse(cached);
-                return;
+                const parsed = JSON.parse(cached);
+                // Invalidate cache if any block type is missing the shapes field
+                // (indicates a pre-shapes-system cache).
+                const stale = Object.values(parsed).some(
+                    t => t.properties && !("shapes" in t.properties)
+                );
+                if (!stale) {
+                    registry = parsed;
+                    return;
+                }
             } catch (_) { /* corrupt cache — fall through to fetch */ }
         }
         await fetchRegistry();
@@ -679,10 +702,173 @@
     // Rendering
     // =========================================================================
 
+    // =========================================================================
+    // Shape rendering
+    // =========================================================================
+
+    // Parse a comma-separated shapes string into an array of {id, params} objects.
+    // Shape format: "<id>:<expr>:<expr>:..." where coordinates/sizes are in tiles (1=one tile)
+    // and colors are in 0–1 range.  Each parameter may be a plain number or a math expression
+    // (evaluated each render cycle).
+    // Available functions/constants: sin cos tan abs sqrt pow log floor ceil round min max PI E
+    // Available operators:  + - * / % (modulo) ** (exponent)
+    // Available variables:  t (seconds since page load)  h (health/maxHealth, 0–1)
+    //                       x y (tile-unit position of current pixel within block, color fields only;
+    //                            resolves to 0 in position/size fields)
+    // Supported shapes:
+    //   r:x:y:w:h:rot:cr:cg:cb[:ca]  — filled rectangle
+    //   c:cx:cy:radius:rot:cr:cg:cb[:ca] — filled circle
+    // rot is 0–1 (0=0°, 0.5=180°, 1=360°); any value is modulo'd into range.
+    // Alpha (ca) is optional and defaults to 1.
+    //
+    // PERFORMANCE WARNING: using x, y, t, or h in color fields triggers a per-pixel
+    // slow path (OffscreenCanvas pixel loop) instead of a single fillRect/arc call.
+    // This runs in JS for every pixel of every affected shape every frame. Use
+    // sparingly — large shapes, many blocks, or high display DPI will tank frame rate.
+    function parseShapes(shapesStr) {
+        if (!shapesStr) return null;
+        const shapes = [];
+        for (const part of shapesStr.split(",")) {
+            const tokens = part.trim().split(":");
+            if (tokens.length < 2) continue;
+            const params = tokens.slice(1).map(function (token) {
+                const n = Number(token);
+                if (!isNaN(n)) return n; // plain number — fast path
+                // Math expression — compile once, evaluate each frame
+                try {
+                    return new Function("_m", "_t", "_h", "_x", "_y",
+                        "\"use strict\";" +
+                        "var sin=_m.sin,cos=_m.cos,tan=_m.tan,abs=_m.abs," +
+                        "sqrt=_m.sqrt,pow=_m.pow,log=_m.log,floor=_m.floor," +
+                        "ceil=_m.ceil,round=_m.round,min=_m.min,max=_m.max," +
+                        "PI=_m.PI,E=_m.E,t=_t,h=_h,x=_x,y=_y;" +
+                        "return (" + token + ");");
+                } catch (e) {
+                    console.warn("shapes: bad expression \"" + token + "\":", e.message);
+                    return 0;
+                }
+            });
+            shapes.push({ id: tokens[0], params: params });
+        }
+        return shapes.length > 0 ? shapes : null;
+    }
+
+    // Draw parsed shapes onto ctx, with block origin at (bx, by) and TS pixels per tile.
+    // Optional alpha (0–1) applied via globalAlpha.
+    // Math-expression params are evaluated with the current time and health ratio.
+    // Color params that use x/y trigger per-pixel rendering via OffscreenCanvas (slow path).
+    // The slow path draws onto an OffscreenCanvas in entity-local pixel space, then blits it
+    // with ctx.drawImage which correctly respects the current canvas transform (DPR, camera,
+    // entity rotation) — unlike getImageData/putImageData which use raw device pixels.
+    function drawShapes(ctx, shapes, bx, by, TS, alpha, h) {
+        const t = _shapeRunning
+            ? _shapeTime + (performance.now() / 1000 - _shapeWallStart)
+            : _shapeTime;
+        const hv = (h !== undefined) ? h : 1;
+        const prevAlpha = ctx.globalAlpha;
+        if (alpha !== undefined) ctx.globalAlpha = alpha;
+
+        // Evaluate a param; position/size params always pass x=0,y=0.
+        function ev(p, px, py) {
+            return typeof p === "function" ? p(Math, t, hv, px, py) : p;
+        }
+
+        // Render a pixel loop into an OffscreenCanvas and blit it at (x0,y0) in the
+        // current transform space.  fillPixel(d,i,elx,ely) should set d[i..i+3] or skip.
+        function blitPixels(x0, y0, W, H, fillPixel) {
+            const off = new OffscreenCanvas(W, H);
+            const idata = off.getContext("2d").createImageData(W, H);
+            const d = idata.data;
+            for (let offy = 0; offy < H; offy++) {
+                for (let offx = 0; offx < W; offx++) {
+                    fillPixel(d, (offy * W + offx) * 4,
+                              x0 + offx + 0.5, y0 + offy + 0.5);
+                }
+            }
+            off.getContext("2d").putImageData(idata, 0, 0);
+            ctx.drawImage(off, x0, y0);
+        }
+
+        for (const { id, params } of shapes) {
+            if (id === "r") {
+                const [xP, yP, wP, hP, rotP, crP, cgP, cbP, caP] = params;
+                const xv = ev(xP, 0, 0), yv = ev(yP, 0, 0);
+                const wv = ev(wP, 0, 0), hv_r = ev(hP, 0, 0);
+                const rotv = ev(rotP, 0, 0);
+                const angle = ((rotv % 1) + 1) % 1 * Math.PI * 2;
+                const rcx = bx + (xv + wv / 2) * TS;
+                const rcy = by + (yv + hv_r / 2) * TS;
+                const hw = wv * TS / 2, hh = hv_r * TS / 2;
+                const dynColor = typeof crP === "function" || typeof cgP === "function" ||
+                                 typeof cbP === "function" || typeof caP === "function";
+                if (!dynColor) {
+                    const cr = ev(crP, 0, 0), cg = ev(cgP, 0, 0), cb = ev(cbP, 0, 0);
+                    const ca = caP !== undefined ? ev(caP, 0, 0) : 1;
+                    ctx.save();
+                    ctx.translate(rcx, rcy);
+                    ctx.rotate(angle);
+                    ctx.fillStyle = "rgba(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + "," + ca + ")";
+                    ctx.fillRect(-hw, -hh, wv * TS, hv_r * TS);
+                    ctx.restore();
+                } else {
+                    const cosA = Math.cos(angle), sinA = Math.sin(angle);
+                    const rad = Math.sqrt(hw * hw + hh * hh);
+                    const x0 = Math.floor(rcx - rad), y0 = Math.floor(rcy - rad);
+                    const W = Math.ceil(rcx + rad) - x0, H = Math.ceil(rcy + rad) - y0;
+                    if (W <= 0 || H <= 0) continue;
+                    blitPixels(x0, y0, W, H, function (d, i, elx, ely) {
+                        const dx = elx - rcx, dy = ely - rcy;
+                        if (Math.abs(dx * cosA + dy * sinA) > hw) return;
+                        if (Math.abs(-dx * sinA + dy * cosA) > hh) return;
+                        const tx = (elx - bx) / TS, ty = (ely - by) / TS;
+                        const cr = ev(crP, tx, ty), cg = ev(cgP, tx, ty), cb = ev(cbP, tx, ty);
+                        const ca = caP !== undefined ? ev(caP, tx, ty) : 1;
+                        const a = Math.min(1, Math.max(0, ca));
+                        if (a <= 0) return;
+                        d[i] = Math.round(cr * 255); d[i+1] = Math.round(cg * 255);
+                        d[i+2] = Math.round(cb * 255); d[i+3] = Math.round(a * 255);
+                    });
+                }
+            } else if (id === "c") {
+                const [cxP, cyP, radiusP, rotP, crP, cgP, cbP, caP] = params;
+                const cxv = ev(cxP, 0, 0), cyv = ev(cyP, 0, 0), rv = ev(radiusP, 0, 0);
+                const ccx = bx + cxv * TS, ccy = by + cyv * TS, rPx = rv * TS;
+                const dynColor = typeof crP === "function" || typeof cgP === "function" ||
+                                 typeof cbP === "function" || typeof caP === "function";
+                if (!dynColor) {
+                    const cr = ev(crP, 0, 0), cg = ev(cgP, 0, 0), cb = ev(cbP, 0, 0);
+                    const ca = caP !== undefined ? ev(caP, 0, 0) : 1;
+                    ctx.fillStyle = "rgba(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + "," + ca + ")";
+                    ctx.beginPath();
+                    ctx.arc(ccx, ccy, rPx, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    const x0 = Math.floor(ccx - rPx), y0 = Math.floor(ccy - rPx);
+                    const W = Math.ceil(ccx + rPx) - x0, H = Math.ceil(ccy + rPx) - y0;
+                    if (W <= 0 || H <= 0) continue;
+                    const rPx2 = rPx * rPx;
+                    blitPixels(x0, y0, W, H, function (d, i, elx, ely) {
+                        const dx = elx - ccx, dy = ely - ccy;
+                        if (dx * dx + dy * dy > rPx2) return;
+                        const tx = (elx - bx) / TS, ty = (ely - by) / TS;
+                        const cr = ev(crP, tx, ty), cg = ev(cgP, tx, ty), cb = ev(cbP, tx, ty);
+                        const ca = caP !== undefined ? ev(caP, tx, ty) : 1;
+                        const a = Math.min(1, Math.max(0, ca));
+                        if (a <= 0) return;
+                        d[i] = Math.round(cr * 255); d[i+1] = Math.round(cg * 255);
+                        d[i+2] = Math.round(cb * 255); d[i+3] = Math.round(a * 255);
+                    });
+                }
+            }
+        }
+        ctx.globalAlpha = prevAlpha;
+    }
+
     // Draw all entity block tiles onto the canvas.
-    // Each tile position in entity.blockMap gets a TILE_SIZE × TILE_SIZE rectangle
-    // coloured by its block type.  The entity's (x, y) and angle are applied so
-    // blocks rotate and translate with the entity.
+    // Each block instance is rendered once (multi-tile blocks anchored at their min tile).
+    // Block appearance is defined by the shapes string in the block type's properties;
+    // falls back to a solid color rectangle if no shapes are defined.
+    // The entity's (x, y) and angle are applied so blocks rotate and translate with the entity.
     function renderBlocks(canvas, entities, camera) {
         if (!registry) return;
 
@@ -737,27 +923,47 @@
             const ox = entity.comOffsetX || 0;
             const oy = entity.comOffsetY || 0;
 
+            // Find the anchor tile (min tx, min ty) for each block instance so
+            // multi-tile blocks are drawn once at their top-left corner.
+            const buiAnchor = {};
             for (const [posKey, bui] of Object.entries(map)) {
+                const [tx, ty] = posKey.split(",").map(Number);
+                if (!buiAnchor[bui]) {
+                    buiAnchor[bui] = { tx, ty };
+                } else {
+                    if (tx < buiAnchor[bui].tx) buiAnchor[bui].tx = tx;
+                    if (ty < buiAnchor[bui].ty) buiAnchor[bui].ty = ty;
+                }
+            }
+
+            for (const [bui, anchor] of Object.entries(buiAnchor)) {
                 const datum = entity.blockData[bui];
                 if (!datum) continue;
                 const type = registry[datum.typeId];
                 if (!type) continue;
 
-                const [tx, ty] = posKey.split(",");
-                const { r, g, b } = type.properties.color;
+                const bw = type.properties.size.x * TILE_SIZE;
+                const bh = type.properties.size.y * TILE_SIZE;
+                const bx = (anchor.tx - 0.5) * TILE_SIZE - ox;
+                const by = (anchor.ty - 0.5) * TILE_SIZE - oy;
+
                 const maxHealth = type.properties.maxHealth || 1;
+                const h = (datum.health ?? maxHealth) / maxHealth;
+
+                const shapes = parseShapes(type.properties.shapes);
+                if (shapes) {
+                    drawShapes(ctx, shapes, bx, by, TILE_SIZE, undefined, h);
+                } else {
+                    const { r, g, b } = type.properties.color;
+                    ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
+                    ctx.fillRect(bx, by, bw, bh);
+                }
+
                 const damage = maxHealth - (datum.health ?? maxHealth);
                 const redAlpha = Math.min(damage / maxHealth, 1) * 0.3;
-
-                const bx = (Number(tx) - 0.5) * TILE_SIZE - ox;
-                const by = (Number(ty) - 0.5) * TILE_SIZE - oy;
-
-                ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
-                ctx.fillRect(bx, by, TILE_SIZE, TILE_SIZE);
-
                 if (redAlpha > 0) {
                     ctx.fillStyle = "rgba(220,30,30," + redAlpha.toFixed(3) + ")";
-                    ctx.fillRect(bx, by, TILE_SIZE, TILE_SIZE);
+                    ctx.fillRect(bx, by, bw, bh);
                 }
             }
 
@@ -782,6 +988,8 @@
         splitIfDisconnected,
         // Rendering
         renderBlocks,
+        parseShapes,
+        drawShapes,
         // Collision
         resolveCollisions,
         resolveContact,
@@ -790,6 +998,7 @@
         applyLinearImpulse,
         applyTorque,
         // Utilities
+        setShapePaused,
         getRegistry: function () { return registry; },
         TILE_SIZE,
         BASE_MASS,
