@@ -699,8 +699,9 @@
     // Available operators:  + - * / % (modulo) ** (exponent)
     // Available variables:  t (seconds since page load)  h (health/maxHealth, 0–1)
     // Supported shapes:
-    //   r:x:y:w:h:cr:cg:cb[:ca]  — filled rectangle
-    //   c:cx:cy:radius:cr:cg:cb[:ca] — filled circle
+    //   r:x:y:w:h:rot:cr:cg:cb[:ca]  — filled rectangle
+    //   c:cx:cy:radius:rot:cr:cg:cb[:ca] — filled circle
+    // rot is 0–1 (0=0°, 0.5=180°, 1=360°); any value is modulo'd into range.
     // Alpha (ca) is optional and defaults to 1.
     function parseShapes(shapesStr) {
         if (!shapesStr) return null;
@@ -743,11 +744,18 @@
                 return typeof p === "function" ? p(Math, t, hv) : p;
             });
             if (id === "r") {
-                const [x, y, w, h, cr, cg, cb, ca = 1] = nums;
+                const [x, y, w, h, rot, cr, cg, cb, ca = 1] = nums;
+                const angle = ((rot % 1) + 1) % 1 * Math.PI * 2;
+                const rcx = bx + (x + w / 2) * TS;
+                const rcy = by + (y + h / 2) * TS;
+                ctx.save();
+                ctx.translate(rcx, rcy);
+                ctx.rotate(angle);
                 ctx.fillStyle = "rgba(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + "," + ca + ")";
-                ctx.fillRect(bx + x * TS, by + y * TS, w * TS, h * TS);
+                ctx.fillRect(-w / 2 * TS, -h / 2 * TS, w * TS, h * TS);
+                ctx.restore();
             } else if (id === "c") {
-                const [cx, cy, radius, cr, cg, cb, ca = 1] = nums;
+                const [cx, cy, radius, rot, cr, cg, cb, ca = 1] = nums;
                 ctx.fillStyle = "rgba(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + "," + ca + ")";
                 ctx.beginPath();
                 ctx.arc(bx + cx * TS, by + cy * TS, radius * TS, 0, Math.PI * 2);
