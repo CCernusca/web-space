@@ -90,10 +90,38 @@ body {
     border-color: #e94560;
 }
 
-/* --- Mobile right-click mode toggle (below Build button) --- */
-#btn-right-click-mode {
+/* --- Unfocus / free camera button (below Build button) --- */
+#btn-unfocus {
     position: absolute;
     top: 58px;
+    right: 16px;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(233, 69, 96, 0.4);
+    border-radius: 8px;
+    color: #e94560;
+    font-family: inherit;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+#btn-unfocus:hover {
+    background: rgba(233, 69, 96, 0.1);
+    border-color: #e94560;
+}
+
+#btn-unfocus.active {
+    background: rgba(233, 69, 96, 0.2);
+    border-color: #e94560;
+}
+
+/* --- Mobile right-click mode toggle (below Unfocus button) --- */
+#btn-right-click-mode {
+    position: absolute;
+    top: 96px;
     right: 16px;
     z-index: 10;
     background: rgba(0, 0, 0, 0.55);
