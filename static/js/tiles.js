@@ -737,7 +737,10 @@
     // Draw parsed shapes onto ctx, with block origin at (bx, by) and TS pixels per tile.
     // Optional alpha (0–1) applied via globalAlpha.
     // Math-expression params are evaluated with the current time and health ratio.
-    // Color params that use x/y trigger per-pixel rendering via ImageData (slow path).
+    // Color params that use x/y trigger per-pixel rendering via OffscreenCanvas (slow path).
+    // The slow path draws onto an OffscreenCanvas in entity-local pixel space, then blits it
+    // with ctx.drawImage which correctly respects the current canvas transform (DPR, camera,
+    // entity rotation) — unlike getImageData/putImageData which use raw device pixels.
     function drawShapes(ctx, shapes, bx, by, TS, alpha, h) {
         const t = performance.now() / 1000;
         const hv = (h !== undefined) ? h : 1;
@@ -749,15 +752,20 @@
             return typeof p === "function" ? p(Math, t, hv, px, py) : p;
         }
 
-        // Composite a source RGBA (0–255 ints, srcA 0–1) onto an ImageData pixel at index i.
-        function composite(d, i, srcR, srcG, srcB, srcA) {
-            const dstA = d[i + 3] / 255;
-            const outA = srcA + dstA * (1 - srcA);
-            if (outA <= 0) return;
-            d[i]     = Math.round((srcR * srcA + d[i]     * dstA * (1 - srcA)) / outA);
-            d[i + 1] = Math.round((srcG * srcA + d[i + 1] * dstA * (1 - srcA)) / outA);
-            d[i + 2] = Math.round((srcB * srcA + d[i + 2] * dstA * (1 - srcA)) / outA);
-            d[i + 3] = Math.round(outA * 255);
+        // Render a pixel loop into an OffscreenCanvas and blit it at (x0,y0) in the
+        // current transform space.  fillPixel(d,i,elx,ely) should set d[i..i+3] or skip.
+        function blitPixels(x0, y0, W, H, fillPixel) {
+            const off = new OffscreenCanvas(W, H);
+            const idata = off.getContext("2d").createImageData(W, H);
+            const d = idata.data;
+            for (let offy = 0; offy < H; offy++) {
+                for (let offx = 0; offx < W; offx++) {
+                    fillPixel(d, (offy * W + offx) * 4,
+                              x0 + offx + 0.5, y0 + offy + 0.5);
+                }
+            }
+            off.getContext("2d").putImageData(idata, 0, 0);
+            ctx.drawImage(off, x0, y0);
         }
 
         for (const { id, params } of shapes) {
@@ -784,32 +792,21 @@
                 } else {
                     const cosA = Math.cos(angle), sinA = Math.sin(angle);
                     const rad = Math.sqrt(hw * hw + hh * hh);
-                    const x0 = Math.max(0, Math.floor(rcx - rad));
-                    const y0 = Math.max(0, Math.floor(rcy - rad));
-                    const x1 = Math.min(ctx.canvas.width,  Math.ceil(rcx + rad));
-                    const y1 = Math.min(ctx.canvas.height, Math.ceil(rcy + rad));
-                    const W = x1 - x0, H = y1 - y0;
+                    const x0 = Math.floor(rcx - rad), y0 = Math.floor(rcy - rad);
+                    const W = Math.ceil(rcx + rad) - x0, H = Math.ceil(rcy + rad) - y0;
                     if (W <= 0 || H <= 0) continue;
-                    const idata = ctx.getImageData(x0, y0, W, H);
-                    const d = idata.data;
-                    const ga = ctx.globalAlpha;
-                    for (let py = y0; py < y1; py++) {
-                        for (let px = x0; px < x1; px++) {
-                            const dx = px + 0.5 - rcx, dy = py + 0.5 - rcy;
-                            const lx = dx * cosA + dy * sinA;
-                            const ly = -dx * sinA + dy * cosA;
-                            if (Math.abs(lx) > hw || Math.abs(ly) > hh) continue;
-                            const tx = (px + 0.5 - bx) / TS;
-                            const ty = (py + 0.5 - by) / TS;
-                            const cr = ev(crP, tx, ty), cg = ev(cgP, tx, ty), cb = ev(cbP, tx, ty);
-                            const ca = caP !== undefined ? ev(caP, tx, ty) : 1;
-                            const srcA = Math.min(1, Math.max(0, ca)) * ga;
-                            if (srcA <= 0) continue;
-                            composite(d, ((py - y0) * W + (px - x0)) * 4,
-                                Math.round(cr * 255), Math.round(cg * 255), Math.round(cb * 255), srcA);
-                        }
-                    }
-                    ctx.putImageData(idata, x0, y0);
+                    blitPixels(x0, y0, W, H, function (d, i, elx, ely) {
+                        const dx = elx - rcx, dy = ely - rcy;
+                        if (Math.abs(dx * cosA + dy * sinA) > hw) return;
+                        if (Math.abs(-dx * sinA + dy * cosA) > hh) return;
+                        const tx = (elx - bx) / TS, ty = (ely - by) / TS;
+                        const cr = ev(crP, tx, ty), cg = ev(cgP, tx, ty), cb = ev(cbP, tx, ty);
+                        const ca = caP !== undefined ? ev(caP, tx, ty) : 1;
+                        const a = Math.min(1, Math.max(0, ca));
+                        if (a <= 0) return;
+                        d[i] = Math.round(cr * 255); d[i+1] = Math.round(cg * 255);
+                        d[i+2] = Math.round(cb * 255); d[i+3] = Math.round(a * 255);
+                    });
                 }
             } else if (id === "c") {
                 const [cxP, cyP, radiusP, rotP, crP, cgP, cbP, caP] = params;
@@ -825,31 +822,21 @@
                     ctx.arc(ccx, ccy, rPx, 0, Math.PI * 2);
                     ctx.fill();
                 } else {
-                    const x0 = Math.max(0, Math.floor(ccx - rPx));
-                    const y0 = Math.max(0, Math.floor(ccy - rPx));
-                    const x1 = Math.min(ctx.canvas.width,  Math.ceil(ccx + rPx));
-                    const y1 = Math.min(ctx.canvas.height, Math.ceil(ccy + rPx));
-                    const W = x1 - x0, H = y1 - y0;
+                    const x0 = Math.floor(ccx - rPx), y0 = Math.floor(ccy - rPx);
+                    const W = Math.ceil(ccx + rPx) - x0, H = Math.ceil(ccy + rPx) - y0;
                     if (W <= 0 || H <= 0) continue;
-                    const idata = ctx.getImageData(x0, y0, W, H);
-                    const d = idata.data;
-                    const ga = ctx.globalAlpha;
                     const rPx2 = rPx * rPx;
-                    for (let py = y0; py < y1; py++) {
-                        for (let px = x0; px < x1; px++) {
-                            const dx = px + 0.5 - ccx, dy = py + 0.5 - ccy;
-                            if (dx * dx + dy * dy > rPx2) continue;
-                            const tx = (px + 0.5 - bx) / TS;
-                            const ty = (py + 0.5 - by) / TS;
-                            const cr = ev(crP, tx, ty), cg = ev(cgP, tx, ty), cb = ev(cbP, tx, ty);
-                            const ca = caP !== undefined ? ev(caP, tx, ty) : 1;
-                            const srcA = Math.min(1, Math.max(0, ca)) * ga;
-                            if (srcA <= 0) continue;
-                            composite(d, ((py - y0) * W + (px - x0)) * 4,
-                                Math.round(cr * 255), Math.round(cg * 255), Math.round(cb * 255), srcA);
-                        }
-                    }
-                    ctx.putImageData(idata, x0, y0);
+                    blitPixels(x0, y0, W, H, function (d, i, elx, ely) {
+                        const dx = elx - ccx, dy = ely - ccy;
+                        if (dx * dx + dy * dy > rPx2) return;
+                        const tx = (elx - bx) / TS, ty = (ely - by) / TS;
+                        const cr = ev(crP, tx, ty), cg = ev(cgP, tx, ty), cb = ev(cbP, tx, ty);
+                        const ca = caP !== undefined ? ev(caP, tx, ty) : 1;
+                        const a = Math.min(1, Math.max(0, ca));
+                        if (a <= 0) return;
+                        d[i] = Math.round(cr * 255); d[i+1] = Math.round(cg * 255);
+                        d[i+2] = Math.round(cb * 255); d[i+3] = Math.round(a * 255);
+                    });
                 }
             }
         }
