@@ -117,6 +117,33 @@
     let pendingExplosionImpulses = [];  // flushed after split processing each frame
     let mouseWorldPos    = null;
 
+    // --- Particle state ---
+    // Each particle: { x, y, vx, vy, lifetime, remaining, shapes }
+    // vx/vy in px/frame (same units as entity velocity).
+    // remaining counts down in seconds (pauses with the game).
+    const particles = [];
+    let lastParticleUpdateTime = 0; // rAF timestamp of last particle update; 0 = first frame
+
+    function spawnParticle(x, y, vx, vy, lifetime, shapeStr) {
+        particles.push({
+            x, y, vx, vy,
+            lifetime,
+            remaining: lifetime,
+            shapes: tiles.parseShapes(shapeStr)
+        });
+    }
+
+    function updateParticles(dtSec) {
+        for (const p of particles) {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.remaining -= dtSec;
+        }
+        for (let i = particles.length - 1; i >= 0; i--) {
+            if (particles[i].remaining <= 0) particles.splice(i, 1);
+        }
+    }
+
     // --- Input state ---
     const keys = {};
     let joystickActive = false;
@@ -220,6 +247,17 @@
                 editorOpen = false;
             });
         });
+
+        // Spawn debris particles when a block is destroyed
+        window._particleOnBlockDestroyed = function (wx, wy, color) {
+            const cr = color.r.toFixed(4), cg = color.g.toFixed(4), cb = color.b.toFixed(4);
+            const shapeStr = "c:0:0:0.25:0:" + cr + ":" + cg + ":" + cb + ":h";
+            for (let i = 0; i < 4; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 0.5 + Math.random() * 1.5; // px/frame
+                spawnParticle(wx, wy, Math.cos(angle) * speed, Math.sin(angle) * speed, 1.0, shapeStr);
+            }
+        };
 
         // Save full state when the page is hidden/closed
         window.addEventListener("pagehide", function () {
@@ -360,10 +398,20 @@
                 }
             }
             pendingExplosionImpulses = [];
+
+            // Particle time step
+            const dtSec = lastParticleUpdateTime > 0
+                ? (timestamp - lastParticleUpdateTime) / 1000
+                : 0;
+            lastParticleUpdateTime = timestamp;
+            updateParticles(dtSec);
+        } else {
+            lastParticleUpdateTime = 0; // reset so first frame after unpause has no jump
         }
         tiles.setShapePaused(editorOpen || paused);
         updateCamera();
         tiles.renderBlocks(canvasEl, entities, camera);
+        renderParticles();
         renderExplosions();
         renderEntities();
         updateHUD();
@@ -552,6 +600,31 @@
             return true;
         });
 
+        ctx.restore();
+    }
+
+    // Draw all live particles onto the world canvas.
+    function renderParticles() {
+        if (particles.length === 0) return;
+        const canvas = canvasEl;
+        const ctx    = canvas.getContext("2d");
+        const dpr    = window.devicePixelRatio || 1;
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.translate(w / 2, h / 2);
+        ctx.rotate(-camera.angle);
+        ctx.scale(camera.zoom, camera.zoom);
+        ctx.translate(-camera.x, -camera.y);
+        for (const p of particles) {
+            if (!p.shapes) continue;
+            const hv = p.remaining / p.lifetime;
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            tiles.drawShapes(ctx, p.shapes, 0, 0, tiles.TILE_SIZE, 1, hv);
+            ctx.restore();
+        }
         ctx.restore();
     }
 
