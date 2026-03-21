@@ -691,9 +691,11 @@
     // Shape rendering
     // =========================================================================
 
-    // Parse a comma-separated shapes string into an array of {id, nums} objects.
-    // Shape format: "<id>:<num>:<num>:..." where coordinates/sizes are in tiles (1=one tile)
-    // and colors are in 0–1 range.
+    // Parse a comma-separated shapes string into an array of {id, params} objects.
+    // Shape format: "<id>:<expr>:<expr>:..." where coordinates/sizes are in tiles (1=one tile)
+    // and colors are in 0–1 range.  Each parameter may be a plain number or a math expression
+    // (evaluated each render cycle).  Available in expressions: sin cos tan abs sqrt pow log
+    // floor ceil round min max PI E t (t = seconds since page load).
     // Supported shapes:
     //   r:x:y:w:h:cr:cg:cb  — filled rectangle
     //   c:cx:cy:radius:cr:cg:cb — filled circle
@@ -703,17 +705,39 @@
         for (const part of shapesStr.split(",")) {
             const tokens = part.trim().split(":");
             if (tokens.length < 2) continue;
-            shapes.push({ id: tokens[0], nums: tokens.slice(1).map(Number) });
+            const params = tokens.slice(1).map(function (token) {
+                const n = Number(token);
+                if (!isNaN(n)) return n; // plain number — fast path
+                // Math expression — compile once, evaluate each frame
+                try {
+                    return new Function("_m", "_t",
+                        "\"use strict\";" +
+                        "var sin=_m.sin,cos=_m.cos,tan=_m.tan,abs=_m.abs," +
+                        "sqrt=_m.sqrt,pow=_m.pow,log=_m.log,floor=_m.floor," +
+                        "ceil=_m.ceil,round=_m.round,min=_m.min,max=_m.max," +
+                        "PI=_m.PI,E=_m.E,t=_t;" +
+                        "return (" + token + ");");
+                } catch (e) {
+                    console.warn("shapes: bad expression \"" + token + "\":", e.message);
+                    return 0;
+                }
+            });
+            shapes.push({ id: tokens[0], params: params });
         }
         return shapes.length > 0 ? shapes : null;
     }
 
     // Draw parsed shapes onto ctx, with block origin at (bx, by) and TS pixels per tile.
     // Optional alpha (0–1) applied via globalAlpha.
+    // Math-expression params are evaluated with the current time (seconds since page load).
     function drawShapes(ctx, shapes, bx, by, TS, alpha) {
+        const t = performance.now() / 1000;
         const prevAlpha = ctx.globalAlpha;
         if (alpha !== undefined) ctx.globalAlpha = alpha;
-        for (const { id, nums } of shapes) {
+        for (const { id, params } of shapes) {
+            const nums = params.map(function (p) {
+                return typeof p === "function" ? p(Math, t) : p;
+            });
             if (id === "r") {
                 const [x, y, w, h, cr, cg, cb] = nums;
                 ctx.fillStyle = "rgb(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + ")";
