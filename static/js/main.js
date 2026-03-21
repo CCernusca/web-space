@@ -186,6 +186,7 @@
             spawnerKey:       spawnerKey || null,
             particleInterval: particleInterval || 0,
             _nextParticle:    0,
+            _hitBuis:         new Set(), // blocks already damaged; never hit twice
         });
     }
 
@@ -216,15 +217,14 @@
             const sy    = p.vy / steps;
 
             let destroyed = false;
-            const hitBuis = new Set(); // avoid double-hitting one block per frame
             for (let s = 0; s < steps && !destroyed; s++) {
                 const cx = p.x + sx * (s + 1);
                 const cy = p.y + sy * (s + 1);
                 for (const entity of entities.values()) {
                     const { tx, ty } = worldToEntityTile(entity, cx, cy);
                     const bui = entity.blockMap[tx + "," + ty];
-                    if (!bui || !entity.blockData[bui] || hitBuis.has(bui)) continue;
-                    hitBuis.add(bui);
+                    if (!bui || !entity.blockData[bui] || p._hitBuis.has(bui)) continue;
+                    p._hitBuis.add(bui);
 
                     tiles.damageBlock(entity, bui, p.impactDamage);
                     const pierced = Math.random() < p.pierce;
