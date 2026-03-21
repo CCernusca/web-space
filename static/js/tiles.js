@@ -697,8 +697,9 @@
     // (evaluated each render cycle).  Available in expressions: sin cos tan abs sqrt pow log
     // floor ceil round min max PI E t (t = seconds since page load).
     // Supported shapes:
-    //   r:x:y:w:h:cr:cg:cb  — filled rectangle
-    //   c:cx:cy:radius:cr:cg:cb — filled circle
+    //   r:x:y:w:h:cr:cg:cb[:ca]  — filled rectangle
+    //   c:cx:cy:radius:cr:cg:cb[:ca] — filled circle
+    // Alpha (ca) is optional and defaults to 1.
     function parseShapes(shapesStr) {
         if (!shapesStr) return null;
         const shapes = [];
@@ -739,12 +740,12 @@
                 return typeof p === "function" ? p(Math, t) : p;
             });
             if (id === "r") {
-                const [x, y, w, h, cr, cg, cb] = nums;
-                ctx.fillStyle = "rgb(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + ")";
+                const [x, y, w, h, cr, cg, cb, ca = 1] = nums;
+                ctx.fillStyle = "rgba(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + "," + ca + ")";
                 ctx.fillRect(bx + x * TS, by + y * TS, w * TS, h * TS);
             } else if (id === "c") {
-                const [cx, cy, radius, cr, cg, cb] = nums;
-                ctx.fillStyle = "rgb(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + ")";
+                const [cx, cy, radius, cr, cg, cb, ca = 1] = nums;
+                ctx.fillStyle = "rgba(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + "," + ca + ")";
                 ctx.beginPath();
                 ctx.arc(bx + cx * TS, by + cy * TS, radius * TS, 0, Math.PI * 2);
                 ctx.fill();
