@@ -754,13 +754,15 @@
                 if (!isNaN(n)) return n; // plain number — fast path
                 // Math expression — compile once, evaluate each frame
                 try {
-                    return new Function("_m", "_t", "_h", "_x", "_y",
+                    const fn = new Function("_m", "_t", "_h", "_x", "_y",
                         "\"use strict\";" +
                         "var sin=_m.sin,cos=_m.cos,tan=_m.tan,abs=_m.abs," +
                         "sqrt=_m.sqrt,pow=_m.pow,log=_m.log,floor=_m.floor," +
                         "ceil=_m.ceil,round=_m.round,min=_m.min,max=_m.max," +
                         "PI=_m.PI,E=_m.E,t=_t,h=_h,x=_x,y=_y;" +
                         "return (" + token + ");");
+                    fn.usesXY = /\bx\b|\by\b/.test(token);
+                    return fn;
                 } catch (e) {
                     console.warn("shapes: bad expression \"" + token + "\":", e.message);
                     return 0;
@@ -840,7 +842,7 @@
                 const rcx = bx + (xv + wv / 2) * TS;
                 const rcy = by + (yv + hv_r / 2) * TS;
                 const hw = wv * TS / 2, hh = hv_r * TS / 2;
-                const dynRGB = typeof crP === "function" || typeof cgP === "function" || typeof cbP === "function";
+                const dynRGB = (typeof crP === "function" && crP.usesXY) || (typeof cgP === "function" && cgP.usesXY) || (typeof cbP === "function" && cbP.usesXY);
                 if (!dynRGB) {
                     const cr = ev(crP, 0, 0), cg = ev(cgP, 0, 0), cb = ev(cbP, 0, 0);
                     const ca = caP !== undefined ? ev(caP, 0, 0) : 1;
@@ -874,7 +876,7 @@
                 const [cxP, cyP, radiusP, rotP, crP, cgP, cbP, caP] = params;
                 const cxv = ev(cxP, 0, 0), cyv = ev(cyP, 0, 0), rv = ev(radiusP, 0, 0);
                 const ccx = bx + cxv * TS, ccy = by + cyv * TS, rPx = rv * TS;
-                const dynRGB = typeof crP === "function" || typeof cgP === "function" || typeof cbP === "function";
+                const dynRGB = (typeof crP === "function" && crP.usesXY) || (typeof cgP === "function" && cgP.usesXY) || (typeof cbP === "function" && cbP.usesXY);
                 if (!dynRGB) {
                     const cr = ev(crP, 0, 0), cg = ev(cgP, 0, 0), cb = ev(cbP, 0, 0);
                     const ca = caP !== undefined ? ev(caP, 0, 0) : 1;
