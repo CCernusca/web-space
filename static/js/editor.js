@@ -566,6 +566,13 @@
             .addEventListener("click", save);
         document.getElementById("btn-editor-move")
             .addEventListener("click", toggleMoveMode);
+        document.getElementById("btn-editor-reload-registry")
+            .addEventListener("click", function () {
+                tiles.fetchRegistry().then(function () {
+                    buildPalette();
+                    render();
+                });
+            });
 
         window.addEventListener("resize", function () {
             if (canvas) render();
