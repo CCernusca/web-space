@@ -39,7 +39,7 @@
     const DAMAGE_SCALE = 1.0;            // damage dealt to each block = j * DAMAGE_SCALE
     const POS_CORRECTION_FACTOR = 0.4;  // fraction of overlap corrected per step (Baumgarte)
     const POS_SLOP              = 0.5;  // overlap tolerance (px) before correction kicks in
-    const REGISTRY_KEY = "ws_blockRegistry";
+    const REGISTRY_KEY = "ws_blockRegistry_v2";
     const REGISTRY_URL = "/api/block-registry";
 
     let registry = null; // { [typeId]: { properties, data } }
