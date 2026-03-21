@@ -226,12 +226,21 @@
                     if (!bui || !entity.blockData[bui] || p._hitBuis.has(bui)) continue;
                     p._hitBuis.add(bui);
 
-                    tiles.damageBlock(entity, bui, p.impactDamage);
+                    const speed       = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+                    const actualDamage = p.impactDamage * speed;
+                    const blockHealth  = entity.blockData[bui].health ?? 0;
+                    tiles.damageBlock(entity, bui, actualDamage);
                     const pierced = Math.random() < p.pierce;
                     if (!pierced) {
                         if (p.explosionStrength > 0) explode(cx, cy, p.explosionStrength);
                         projectiles.splice(pi, 1);
                         destroyed = true;
+                    } else {
+                        // Velocity bleeds logarithmically: half remains as ratio → ∞
+                        const ratio = blockHealth / Math.max(actualDamage, 1e-9);
+                        const retainFactor = 0.5 + 0.5 / (1 + Math.log(1 + ratio));
+                        p.vx *= retainFactor;
+                        p.vy *= retainFactor;
                     }
                     break; // one entity per step
                 }
@@ -1017,7 +1026,7 @@
                         3,              // lifetime (seconds)
                         "r:-0.375:-0.1:0.75:0.2:0:1:1:0:1", // bright yellow elongated rect
                         "white_glow",   // particle spawner key
-                        0.5             // particleInterval (seconds)
+                        0.1             // particleInterval (seconds)
                     );
                 }
             }
