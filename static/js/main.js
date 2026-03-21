@@ -26,7 +26,25 @@
 
     function updateCamera() {
         const player = entities.get(playerUID);
-        if (!player) return;
+        if (!player) {
+            // Free camera: rotate smoothly to upright (global up), move via WASD/joystick.
+            let da = -camera.angle;
+            da -= Math.round(da / (2 * Math.PI)) * 2 * Math.PI;
+            camera.angle += da * CAM_ROT_LERP;
+
+            const canvasH = canvasEl.clientHeight || 500;
+            const speed = (canvasH / camera.zoom) * 0.012; // ~72% of visible height per second
+            if (isMobile) {
+                camera.x += joystickDir.x * speed;
+                camera.y += joystickDir.y * speed;
+            } else {
+                if (keys["w"] || keys["arrowup"])    camera.y -= speed;
+                if (keys["s"] || keys["arrowdown"])  camera.y += speed;
+                if (keys["a"] || keys["arrowleft"])  camera.x -= speed;
+                if (keys["d"] || keys["arrowright"]) camera.x += speed;
+            }
+            return;
+        }
 
         // Rotate first so the position lerp runs in the already-updated frame.
         // (Lerping position in world space while the camera angle also lags causes
@@ -233,6 +251,11 @@
             }
         });
 
+        // --- Unfocus / free camera ---
+        document.getElementById("btn-unfocus").addEventListener("click", function () {
+            playerUID = null;
+        });
+
         // --- Ship editor ---
         document.getElementById("btn-open-editor").addEventListener("click", function () {
             const player = entities.get(playerUID);
@@ -297,9 +320,15 @@
 
     function updateHUD() {
         const e = entities.get(playerUID);
-        if (!e) return;
-        posXEl.textContent = Math.round(e.x - WORLD_W / 2);
-        posYEl.textContent = Math.round(e.y - WORLD_H / 2);
+        const freeCamera = !e;
+        document.getElementById("btn-unfocus").classList.toggle("active", freeCamera);
+        if (freeCamera) {
+            posXEl.textContent = Math.round(camera.x - WORLD_W / 2);
+            posYEl.textContent = Math.round(camera.y - WORLD_H / 2);
+        } else {
+            posXEl.textContent = Math.round(e.x - WORLD_W / 2);
+            posYEl.textContent = Math.round(e.y - WORLD_H / 2);
+        }
     }
 
     // --- Game loop ---
