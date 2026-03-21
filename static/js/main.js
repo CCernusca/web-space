@@ -1072,6 +1072,11 @@
                                 proj.spawnerKey,
                                 proj.particleInterval
                             );
+                            if (proj.blowback && player.mass > 0) {
+                                const impulse = proj.blowback / player.mass;
+                                player.vx -= Math.sin(player.angle) * impulse;
+                                player.vy += Math.cos(player.angle) * impulse;
+                            }
                         }
                     }
                 }
