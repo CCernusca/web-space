@@ -158,7 +158,9 @@
             p.remaining -= dtSec;
         }
         for (let i = particles.length - 1; i >= 0; i--) {
-            if (particles[i].remaining <= 0) particles.splice(i, 1);
+            const p = particles[i];
+            if (p.remaining <= 0 || p.x < 0 || p.x > WORLD_W || p.y < 0 || p.y > WORLD_H)
+                particles.splice(i, 1);
         }
     }
 
@@ -202,9 +204,10 @@
                 }
             }
 
-            // Lifetime
+            // Lifetime / out-of-bounds
             p.remaining -= dtSec;
-            if (p.remaining <= 0) { projectiles.splice(pi, 1); continue; }
+            if (p.remaining <= 0 || p.x < 0 || p.x > WORLD_W || p.y < 0 || p.y > WORLD_H)
+                { projectiles.splice(pi, 1); continue; }
 
             // March from current position toward next, checking blocks each step
             const dist  = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
