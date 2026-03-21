@@ -569,7 +569,9 @@
         document.getElementById("btn-editor-reload-registry")
             .addEventListener("click", function () {
                 tiles.fetchRegistry().then(function () {
+                    registry = tiles.getRegistry();
                     buildPalette();
+                    updatePaletteSelection();
                     render();
                 });
             });
