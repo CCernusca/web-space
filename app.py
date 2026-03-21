@@ -6,6 +6,20 @@ app = Flask(__name__)
 # "properties" describes the type (sent to client, cached in localStorage).
 # "data" holds default values for per-instance mutable fields (health only for now).
 # maxHealth lives in properties (type-level constant); health lives in data (instance state).
+# Shape format: "<id>:<expr>:<expr>:..." where coordinates/sizes are in tiles (1=one tile)
+# and colors are in 0–1 range.  Each parameter may be a plain number or a math expression
+# (evaluated each render cycle).
+# Available functions/constants: sin cos tan abs sqrt pow log floor ceil round min max PI E
+# Available operators:  + - * / % (modulo) ** (exponent)
+# Available variables:  t (seconds since page load)  h (health/maxHealth, 0–1)
+#                       x y (tile-unit position of current pixel within block, color fields only;
+#                            resolves to 0 in position/size fields)
+# Supported shapes:
+#   r:x:y:w:h:rot:cr:cg:cb[:ca]  — filled rectangle
+#   c:cx:cy:radius:rot:cr:cg:cb[:ca] — filled circle
+# rot is 0–1 (0=0°, 0.5=180°, 1=360°); any value is modulo'd into range.
+# Alpha (ca) is optional and defaults to 1.
+# When x or y are used in color fields, shapes are rendered pixel-by-pixel (slow path).
 BLOCK_REGISTRY = {
     "hull_light": {
         "properties": {
