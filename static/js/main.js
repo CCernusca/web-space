@@ -69,9 +69,9 @@
         camera.x += moveX * cos - moveY * sin;
         camera.y += moveX * sin + moveY * cos;
 
-        // Zoom: canvas height = 2 × interactionRadius, minimum 20 blocks
+        // Zoom: canvas height = 4 × interactionRadius, minimum 20 blocks
         const canvasH   = canvasEl.clientHeight || 500;
-        const worldH    = Math.max(2 * (player.interactionRadius || 0), CAM_MIN_HEIGHT);
+        const worldH    = Math.max(4 * (player.interactionRadius || 0), CAM_MIN_HEIGHT);
         const targetZoom = canvasH / worldH;
         camera.zoom += (targetZoom - camera.zoom) * CAM_ZOOM_LERP;
     }
