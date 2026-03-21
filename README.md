@@ -42,6 +42,7 @@ You start as a single cockpit block floating in the world. Use the ship editor t
 - **Entity splitting** — If an explosion or collision disconnects parts of a ship, those parts split into separate independent entities.
 - **Attraction** — Hold left-click (or tap on mobile) to pull nearby entities toward your cursor with a distance-scaled force.
 - **Multiple entities** — Spawn extra ships with right-click. Switch control between them with `Ctrl`+click (PC) or double-tap (mobile).
+- **Particle effects** — Blocks emit colored debris particles when destroyed. Particles are ephemeral (not saved) and fade out over their lifetime.
 - **Cloud saves** — Game state is saved to Google Drive automatically every 30 seconds and on page close. Your ships persist across sessions.
 
 ---
@@ -166,6 +167,26 @@ Currently, cockpits (their rectangular base) rotate when taking damage:
 r:0:0:1:1:0.05*(1-h):0.24:0.63:0.78,c:0.5:0.5:0.3:0:0.6:0.88:1.0
 ```
 
+### Particle System
+
+Particles are lightweight world-space objects rendered on the game canvas alongside blocks. They are **not** saved to the cloud.
+
+#### API
+
+```js
+spawnParticle(x, y, vx, vy, lifetime, shape)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `x`, `y` | number | World-space spawn position (px) |
+| `vx`, `vy` | number | Initial velocity (px/frame, same units as entities) |
+| `lifetime` | number | How long the particle lives (seconds); countdown pauses when the game is paused |
+| `shape` | string | Shape descriptor string — same format as block `shapes`. `h` resolves to the remaining lifetime fraction (1 = just spawned, 0 = about to expire) |
+
+#### Block destruction particles
+
+When a block is destroyed (health reaches 0), 4 debris particles spawn at the block's center with random directions and speeds of 0.5–2 px/frame, each living for 1 second. Their shape is a filled circle with radius ¼ tile, colored to match the first (bottom-most) shape of the destroyed block, and with alpha = `h` so they fade out as they age.
 ### Persistence
 
 Game state is serialized to JSON and stored in Google Drive under `/.webspace/save.json`. The save includes all entity positions, velocities, angles, and complete block data for every entity. Autosave triggers every 30 seconds and on page hide/close.

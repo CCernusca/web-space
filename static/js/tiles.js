@@ -163,6 +163,24 @@
         if (!datum) return;
         datum.health -= damage;
         if (datum.health <= 0) {
+            // Notify particle system before removing the block
+            if (typeof window._particleOnBlockDestroyed === "function" && registry) {
+                let anchorTx = null, anchorTy = null;
+                for (const [key, b] of Object.entries(entity.blockMap)) {
+                    if (b === bui) {
+                        const [kx, ky] = key.split(",").map(Number);
+                        if (anchorTx === null || kx < anchorTx || (kx === anchorTx && ky < anchorTy)) {
+                            anchorTx = kx; anchorTy = ky;
+                        }
+                    }
+                }
+                const type = registry[datum.typeId];
+                if (anchorTx !== null && type) {
+                    const { x: sw, y: sh } = type.properties.size;
+                    const [wx, wy] = _tileWorldCenter(anchorTx + (sw - 1) / 2, anchorTy + (sh - 1) / 2, entity);
+                    window._particleOnBlockDestroyed(wx, wy, _firstShapeColor(type));
+                }
+            }
             _removeBlock(entity, bui);
             computeEntityProps(entity);
             entity._pendingSplit = true;
@@ -751,6 +769,29 @@
             shapes.push({ id: tokens[0], params: params });
         }
         return shapes.length > 0 ? shapes : null;
+    }
+
+    // Return the {r,g,b} color (0–1 channels) of the bottom-most (first) shape in a block
+    // type's shapes string, evaluated at full health (h=1) and the current game time.
+    // Falls back to the block's flat `color` property (normalised), or white if absent.
+    function _firstShapeColor(type) {
+        const t = _shapeRunning
+            ? _shapeTime + (performance.now() / 1000 - _shapeWallStart)
+            : _shapeTime;
+        if (type && type.properties && type.properties.shapes) {
+            const shapes = parseShapes(type.properties.shapes);
+            if (shapes && shapes.length > 0) {
+                const { id, params } = shapes[0];
+                function ev(p) { return typeof p === "function" ? p(Math, t, 1, 0, 0) : p; }
+                if (id === "r") return { r: ev(params[6]), g: ev(params[7]), b: ev(params[8]) };
+                if (id === "c") return { r: ev(params[4]), g: ev(params[5]), b: ev(params[6]) };
+            }
+        }
+        if (type && type.properties && type.properties.color) {
+            const { r, g, b } = type.properties.color;
+            return { r: r / 255, g: g / 255, b: b / 255 };
+        }
+        return { r: 1, g: 1, b: 1 };
     }
 
     // Draw parsed shapes onto ctx, with block origin at (bx, by) and TS pixels per tile.
