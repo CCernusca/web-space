@@ -698,11 +698,14 @@
     // Available functions/constants: sin cos tan abs sqrt pow log floor ceil round min max PI E
     // Available operators:  + - * / % (modulo) ** (exponent)
     // Available variables:  t (seconds since page load)  h (health/maxHealth, 0–1)
+    //                       x y (tile-unit position of current pixel within block, color fields only;
+    //                            resolves to 0 in position/size fields)
     // Supported shapes:
     //   r:x:y:w:h:rot:cr:cg:cb[:ca]  — filled rectangle
     //   c:cx:cy:radius:rot:cr:cg:cb[:ca] — filled circle
     // rot is 0–1 (0=0°, 0.5=180°, 1=360°); any value is modulo'd into range.
     // Alpha (ca) is optional and defaults to 1.
+    // When x or y are used in color fields, shapes are rendered pixel-by-pixel (slow path).
     function parseShapes(shapesStr) {
         if (!shapesStr) return null;
         const shapes = [];
@@ -714,12 +717,12 @@
                 if (!isNaN(n)) return n; // plain number — fast path
                 // Math expression — compile once, evaluate each frame
                 try {
-                    return new Function("_m", "_t", "_h",
+                    return new Function("_m", "_t", "_h", "_x", "_y",
                         "\"use strict\";" +
                         "var sin=_m.sin,cos=_m.cos,tan=_m.tan,abs=_m.abs," +
                         "sqrt=_m.sqrt,pow=_m.pow,log=_m.log,floor=_m.floor," +
                         "ceil=_m.ceil,round=_m.round,min=_m.min,max=_m.max," +
-                        "PI=_m.PI,E=_m.E,t=_t,h=_h;" +
+                        "PI=_m.PI,E=_m.E,t=_t,h=_h,x=_x,y=_y;" +
                         "return (" + token + ");");
                 } catch (e) {
                     console.warn("shapes: bad expression \"" + token + "\":", e.message);
@@ -734,32 +737,120 @@
     // Draw parsed shapes onto ctx, with block origin at (bx, by) and TS pixels per tile.
     // Optional alpha (0–1) applied via globalAlpha.
     // Math-expression params are evaluated with the current time and health ratio.
+    // Color params that use x/y trigger per-pixel rendering via ImageData (slow path).
     function drawShapes(ctx, shapes, bx, by, TS, alpha, h) {
         const t = performance.now() / 1000;
         const hv = (h !== undefined) ? h : 1;
         const prevAlpha = ctx.globalAlpha;
         if (alpha !== undefined) ctx.globalAlpha = alpha;
+
+        // Evaluate a param; position/size params always pass x=0,y=0.
+        function ev(p, px, py) {
+            return typeof p === "function" ? p(Math, t, hv, px, py) : p;
+        }
+
+        // Composite a source RGBA (0–255 ints, srcA 0–1) onto an ImageData pixel at index i.
+        function composite(d, i, srcR, srcG, srcB, srcA) {
+            const dstA = d[i + 3] / 255;
+            const outA = srcA + dstA * (1 - srcA);
+            if (outA <= 0) return;
+            d[i]     = Math.round((srcR * srcA + d[i]     * dstA * (1 - srcA)) / outA);
+            d[i + 1] = Math.round((srcG * srcA + d[i + 1] * dstA * (1 - srcA)) / outA);
+            d[i + 2] = Math.round((srcB * srcA + d[i + 2] * dstA * (1 - srcA)) / outA);
+            d[i + 3] = Math.round(outA * 255);
+        }
+
         for (const { id, params } of shapes) {
-            const nums = params.map(function (p) {
-                return typeof p === "function" ? p(Math, t, hv) : p;
-            });
             if (id === "r") {
-                const [x, y, w, h, rot, cr, cg, cb, ca = 1] = nums;
-                const angle = ((rot % 1) + 1) % 1 * Math.PI * 2;
-                const rcx = bx + (x + w / 2) * TS;
-                const rcy = by + (y + h / 2) * TS;
-                ctx.save();
-                ctx.translate(rcx, rcy);
-                ctx.rotate(angle);
-                ctx.fillStyle = "rgba(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + "," + ca + ")";
-                ctx.fillRect(-w / 2 * TS, -h / 2 * TS, w * TS, h * TS);
-                ctx.restore();
+                const [xP, yP, wP, hP, rotP, crP, cgP, cbP, caP] = params;
+                const xv = ev(xP, 0, 0), yv = ev(yP, 0, 0);
+                const wv = ev(wP, 0, 0), hv_r = ev(hP, 0, 0);
+                const rotv = ev(rotP, 0, 0);
+                const angle = ((rotv % 1) + 1) % 1 * Math.PI * 2;
+                const rcx = bx + (xv + wv / 2) * TS;
+                const rcy = by + (yv + hv_r / 2) * TS;
+                const hw = wv * TS / 2, hh = hv_r * TS / 2;
+                const dynColor = typeof crP === "function" || typeof cgP === "function" ||
+                                 typeof cbP === "function" || typeof caP === "function";
+                if (!dynColor) {
+                    const cr = ev(crP, 0, 0), cg = ev(cgP, 0, 0), cb = ev(cbP, 0, 0);
+                    const ca = caP !== undefined ? ev(caP, 0, 0) : 1;
+                    ctx.save();
+                    ctx.translate(rcx, rcy);
+                    ctx.rotate(angle);
+                    ctx.fillStyle = "rgba(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + "," + ca + ")";
+                    ctx.fillRect(-hw, -hh, wv * TS, hv_r * TS);
+                    ctx.restore();
+                } else {
+                    const cosA = Math.cos(angle), sinA = Math.sin(angle);
+                    const rad = Math.sqrt(hw * hw + hh * hh);
+                    const x0 = Math.max(0, Math.floor(rcx - rad));
+                    const y0 = Math.max(0, Math.floor(rcy - rad));
+                    const x1 = Math.min(ctx.canvas.width,  Math.ceil(rcx + rad));
+                    const y1 = Math.min(ctx.canvas.height, Math.ceil(rcy + rad));
+                    const W = x1 - x0, H = y1 - y0;
+                    if (W <= 0 || H <= 0) continue;
+                    const idata = ctx.getImageData(x0, y0, W, H);
+                    const d = idata.data;
+                    const ga = ctx.globalAlpha;
+                    for (let py = y0; py < y1; py++) {
+                        for (let px = x0; px < x1; px++) {
+                            const dx = px + 0.5 - rcx, dy = py + 0.5 - rcy;
+                            const lx = dx * cosA + dy * sinA;
+                            const ly = -dx * sinA + dy * cosA;
+                            if (Math.abs(lx) > hw || Math.abs(ly) > hh) continue;
+                            const tx = (px + 0.5 - bx) / TS;
+                            const ty = (py + 0.5 - by) / TS;
+                            const cr = ev(crP, tx, ty), cg = ev(cgP, tx, ty), cb = ev(cbP, tx, ty);
+                            const ca = caP !== undefined ? ev(caP, tx, ty) : 1;
+                            const srcA = Math.min(1, Math.max(0, ca)) * ga;
+                            if (srcA <= 0) continue;
+                            composite(d, ((py - y0) * W + (px - x0)) * 4,
+                                Math.round(cr * 255), Math.round(cg * 255), Math.round(cb * 255), srcA);
+                        }
+                    }
+                    ctx.putImageData(idata, x0, y0);
+                }
             } else if (id === "c") {
-                const [cx, cy, radius, rot, cr, cg, cb, ca = 1] = nums;
-                ctx.fillStyle = "rgba(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + "," + ca + ")";
-                ctx.beginPath();
-                ctx.arc(bx + cx * TS, by + cy * TS, radius * TS, 0, Math.PI * 2);
-                ctx.fill();
+                const [cxP, cyP, radiusP, rotP, crP, cgP, cbP, caP] = params;
+                const cxv = ev(cxP, 0, 0), cyv = ev(cyP, 0, 0), rv = ev(radiusP, 0, 0);
+                const ccx = bx + cxv * TS, ccy = by + cyv * TS, rPx = rv * TS;
+                const dynColor = typeof crP === "function" || typeof cgP === "function" ||
+                                 typeof cbP === "function" || typeof caP === "function";
+                if (!dynColor) {
+                    const cr = ev(crP, 0, 0), cg = ev(cgP, 0, 0), cb = ev(cbP, 0, 0);
+                    const ca = caP !== undefined ? ev(caP, 0, 0) : 1;
+                    ctx.fillStyle = "rgba(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + "," + ca + ")";
+                    ctx.beginPath();
+                    ctx.arc(ccx, ccy, rPx, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    const x0 = Math.max(0, Math.floor(ccx - rPx));
+                    const y0 = Math.max(0, Math.floor(ccy - rPx));
+                    const x1 = Math.min(ctx.canvas.width,  Math.ceil(ccx + rPx));
+                    const y1 = Math.min(ctx.canvas.height, Math.ceil(ccy + rPx));
+                    const W = x1 - x0, H = y1 - y0;
+                    if (W <= 0 || H <= 0) continue;
+                    const idata = ctx.getImageData(x0, y0, W, H);
+                    const d = idata.data;
+                    const ga = ctx.globalAlpha;
+                    const rPx2 = rPx * rPx;
+                    for (let py = y0; py < y1; py++) {
+                        for (let px = x0; px < x1; px++) {
+                            const dx = px + 0.5 - ccx, dy = py + 0.5 - ccy;
+                            if (dx * dx + dy * dy > rPx2) continue;
+                            const tx = (px + 0.5 - bx) / TS;
+                            const ty = (py + 0.5 - by) / TS;
+                            const cr = ev(crP, tx, ty), cg = ev(cgP, tx, ty), cb = ev(cbP, tx, ty);
+                            const ca = caP !== undefined ? ev(caP, tx, ty) : 1;
+                            const srcA = Math.min(1, Math.max(0, ca)) * ga;
+                            if (srcA <= 0) continue;
+                            composite(d, ((py - y0) * W + (px - x0)) * 4,
+                                Math.round(cr * 255), Math.round(cg * 255), Math.round(cb * 255), srcA);
+                        }
+                    }
+                    ctx.putImageData(idata, x0, y0);
+                }
             }
         }
         ctx.globalAlpha = prevAlpha;
