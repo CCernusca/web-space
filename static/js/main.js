@@ -401,6 +401,12 @@
             spawnParticle(x, y, vx * 0.05, vy * 0.05, 0.6, "c:0:0:0.25:0:1:1:1:h");
         };
 
+        // Trigger deathExplosion when a block is destroyed
+        window._onBlockDestroyed = function (wx, wy, typeProperties) {
+            const strength = typeProperties.deathExplosion || 0;
+            if (strength > 0) explode(wx, wy, strength);
+        };
+
         // Spawn debris particles when a block is destroyed
         window._particleOnBlockDestroyed = function (wx, wy, color) {
             const cr = color.r.toFixed(4), cg = color.g.toFixed(4), cb = color.b.toFixed(4);
@@ -1028,6 +1034,46 @@
                         "white_glow",   // particle spawner key
                         0.1             // particleInterval (seconds)
                     );
+                }
+            }
+            if (e.key.toLowerCase() === "h") {
+                if (!editorOpen) {
+                    const player = entities.get(playerUID);
+                    if (player) {
+                        const registry = tiles.getRegistry();
+                        for (const [bui, datum] of Object.entries(player.blockData)) {
+                            const type = registry && registry[datum.typeId];
+                            if (!type) continue;
+                            const proj = type.properties.projectile;
+                            if (!proj) continue;
+                            // Find anchor (top-left) tile for this bui
+                            let anchorTx = null, anchorTy = null;
+                            for (const [key, b] of Object.entries(player.blockMap)) {
+                                if (b === bui) {
+                                    const [kx, ky] = key.split(",").map(Number);
+                                    if (anchorTx === null || kx < anchorTx || (kx === anchorTx && ky < anchorTy)) {
+                                        anchorTx = kx; anchorTy = ky;
+                                    }
+                                }
+                            }
+                            if (anchorTx === null) continue;
+                            // Spawn one tile above the block's top edge, horizontally centred
+                            const spawnTx = anchorTx + (type.properties.size.x - 1) / 2;
+                            const [wx, wy] = tiles.tileWorldCenter(spawnTx, anchorTy - 1, player);
+                            spawnProjectile(
+                                wx, wy,
+                                Math.sin(player.angle) * proj.speed,
+                                -Math.cos(player.angle) * proj.speed,
+                                proj.impactDamage,
+                                proj.pierce,
+                                proj.explosionStrength,
+                                proj.lifetime,
+                                proj.shapeStr,
+                                proj.spawnerKey,
+                                proj.particleInterval
+                            );
+                        }
+                    }
                 }
             }
             if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(e.key.toLowerCase())) {
