@@ -118,18 +118,18 @@
     let mouseWorldPos    = null;
 
     // --- Particle state ---
-    // Each particle: { x, y, vx, vy, lifetime, remaining, shapes }
+    // Each particle: { x, y, vx, vy, lifetime, remaining, r, g, b }
     // vx/vy in px/frame (same units as entity velocity).
     // remaining counts down in seconds (pauses with the game).
     const particles = [];
     let lastParticleUpdateTime = 0; // rAF timestamp of last particle update; 0 = first frame
 
-    function spawnParticle(x, y, vx, vy, lifetime, shapeStr) {
+    function spawnParticle(x, y, vx, vy, lifetime, color) {
         particles.push({
             x, y, vx, vy,
             lifetime,
             remaining: lifetime,
-            shapes: tiles.parseShapes(shapeStr)
+            r: color.r, g: color.g, b: color.b
         });
     }
 
@@ -250,12 +250,10 @@
 
         // Spawn debris particles when a block is destroyed
         window._particleOnBlockDestroyed = function (wx, wy, color) {
-            const cr = color.r.toFixed(4), cg = color.g.toFixed(4), cb = color.b.toFixed(4);
-            const shapeStr = "c:0:0:0.25:0:" + cr + ":" + cg + ":" + cb + ":h";
             for (let i = 0; i < 4; i++) {
                 const angle = Math.random() * Math.PI * 2;
                 const speed = 0.5 + Math.random() * 1.5; // px/frame
-                spawnParticle(wx, wy, Math.cos(angle) * speed, Math.sin(angle) * speed, 1.0, shapeStr);
+                spawnParticle(wx, wy, Math.cos(angle) * speed, Math.sin(angle) * speed, 1.0, color);
             }
         };
 
@@ -611,6 +609,7 @@
         const dpr    = window.devicePixelRatio || 1;
         const w = canvas.clientWidth;
         const h = canvas.clientHeight;
+        const radius = tiles.TILE_SIZE * 0.25;
         ctx.save();
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.translate(w / 2, h / 2);
@@ -618,12 +617,12 @@
         ctx.scale(camera.zoom, camera.zoom);
         ctx.translate(-camera.x, -camera.y);
         for (const p of particles) {
-            if (!p.shapes) continue;
-            const hv = p.remaining / p.lifetime;
-            ctx.save();
-            ctx.translate(p.x, p.y);
-            tiles.drawShapes(ctx, p.shapes, 0, 0, tiles.TILE_SIZE, 1, hv);
-            ctx.restore();
+            const alpha = p.remaining / p.lifetime;
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = "rgb(" + Math.round(p.r * 255) + "," + Math.round(p.g * 255) + "," + Math.round(p.b * 255) + ")";
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+            ctx.fill();
         }
         ctx.restore();
     }
