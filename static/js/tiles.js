@@ -44,6 +44,21 @@
 
     let registry = null; // { [typeId]: { properties, data } }
 
+    // Shape animation time — advances only when not paused.
+    let _shapeTime      = 0;
+    let _shapeRunning   = true;
+    let _shapeWallStart = performance.now() / 1000;
+
+    function setShapePaused(paused) {
+        if (paused && _shapeRunning) {
+            _shapeTime   += performance.now() / 1000 - _shapeWallStart;
+            _shapeRunning  = false;
+        } else if (!paused && !_shapeRunning) {
+            _shapeWallStart = performance.now() / 1000;
+            _shapeRunning   = true;
+        }
+    }
+
     // =========================================================================
     // Registry loading
     // =========================================================================
@@ -742,7 +757,9 @@
     // with ctx.drawImage which correctly respects the current canvas transform (DPR, camera,
     // entity rotation) — unlike getImageData/putImageData which use raw device pixels.
     function drawShapes(ctx, shapes, bx, by, TS, alpha, h) {
-        const t = performance.now() / 1000;
+        const t = _shapeRunning
+            ? _shapeTime + (performance.now() / 1000 - _shapeWallStart)
+            : _shapeTime;
         const hv = (h !== undefined) ? h : 1;
         const prevAlpha = ctx.globalAlpha;
         if (alpha !== undefined) ctx.globalAlpha = alpha;
@@ -977,6 +994,7 @@
         applyLinearImpulse,
         applyTorque,
         // Utilities
+        setShapePaused,
         getRegistry: function () { return registry; },
         TILE_SIZE,
         BASE_MASS,
