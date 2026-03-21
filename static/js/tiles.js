@@ -720,7 +720,11 @@
     //   c:cx:cy:radius:rot:cr:cg:cb[:ca] — filled circle
     // rot is 0–1 (0=0°, 0.5=180°, 1=360°); any value is modulo'd into range.
     // Alpha (ca) is optional and defaults to 1.
-    // When x or y are used in color fields, shapes are rendered pixel-by-pixel (slow path).
+    //
+    // PERFORMANCE WARNING: using x, y, t, or h in color fields triggers a per-pixel
+    // slow path (OffscreenCanvas pixel loop) instead of a single fillRect/arc call.
+    // This runs in JS for every pixel of every affected shape every frame. Use
+    // sparingly — large shapes, many blocks, or high display DPI will tank frame rate.
     function parseShapes(shapesStr) {
         if (!shapesStr) return null;
         const shapes = [];
