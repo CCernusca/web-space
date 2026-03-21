@@ -783,7 +783,7 @@
             if (shapes && shapes.length > 0) {
                 const { id, params } = shapes[0];
                 function ev(p) { return typeof p === "function" ? p(Math, t, 1, 0, 0) : p; }
-                if (id === "r") return { r: ev(params[6]), g: ev(params[7]), b: ev(params[8]) };
+                if (id === "r") return { r: ev(params[5]), g: ev(params[6]), b: ev(params[7]) };
                 if (id === "c") return { r: ev(params[4]), g: ev(params[5]), b: ev(params[6]) };
             }
         }
