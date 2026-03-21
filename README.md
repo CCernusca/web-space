@@ -119,11 +119,47 @@ Explosions use a raycasting model:
 
 Block types are defined server-side and served from `/api/block-registry`, cached in `localStorage`. Each block type has:
 - `size` — tile footprint (x × y tiles)
-- `color` — RGB display color
+- `color` — RGB display color (fallback when no `shapes` string is defined)
 - `maxHealth` — hit points
 - `mass` — contribution to entity mass
+- `shapes` — optional shape descriptor string (see below)
 
 Each block instance on an entity stores its current `health`. Damage reduces health; at zero the block is removed, and the entity's physics properties are recomputed. If the remaining blocks are no longer all connected, the entity is split.
+
+The editor's **↻ Reload Blocks** button force-fetches a fresh registry from the server, discarding the `localStorage` cache. Useful during development when block definitions change.
+
+#### Shape Descriptor Format
+
+The `shapes` field is a comma-separated list of shape commands. Each shape is a colon-separated token string:
+
+```
+r:x:y:w:h:rot:cr:cg:cb[:ca]      filled rectangle
+c:cx:cy:radius:rot:cr:cg:cb[:ca] filled circle
+```
+
+All position/size values are in tile units relative to the block's top-left corner. Color channels (`cr`, `cg`, `cb`, `ca`) are in the 0–1 range. `rot` is 0–1 where 0 = 0°, 0.5 = 180°, 1 = 360°; values outside this range are modulo'd. Alpha (`ca`) is optional and defaults to 1.
+
+Any value can be a math expression instead of a plain number:
+
+| Variable | Meaning |
+|----------|---------|
+| `t` | Seconds of game-time elapsed (freezes when paused) |
+| `h` | Block health ratio (1 = full health, 0 = destroyed) |
+| `x` | Tile-unit X position of the current pixel within the block *(color fields only)* |
+| `y` | Tile-unit Y position of the current pixel within the block *(color fields only)* |
+
+Available functions/constants: `sin cos tan abs sqrt pow log floor ceil round min max PI E`
+Available operators: `+ - * / % ** (exponent)`
+
+`x` and `y` in position or size fields always resolve to 0. Using `x`, `y`, `t`, or `h` in **color** fields triggers a per-pixel slow path (JS pixel loop via `OffscreenCanvas`). **This has a significant performance cost** — use sparingly, especially on large blocks or at high DPI.
+
+**Examples:**
+
+```
+r:0:0:1:1:0:0.5*h:0:0           rectangle that fades from red to black as health drops
+r:0:0:1:1:0:x:y:0               gradient: red increases left→right, green top→bottom
+r:0:0:1:1:0:0.5+0.5*sin(t):0:0  rectangle that pulses red over time
+```
 
 ### Persistence
 
