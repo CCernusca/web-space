@@ -180,19 +180,35 @@
             }
         }
 
-        // Placed blocks
-        for (const [posKey, bui] of Object.entries(workingEntity.blockMap)) {
-            const [tx, ty] = posKey.split(",").map(Number);
-            const { col, row } = tileToGrid(tx, ty);
-            if (!inBounds(col, row)) continue;
-            const datum = workingEntity.blockData[bui];
-            if (!datum) continue;
-            const type = registry[datum.typeId];
-            if (!type) continue;
-            const { r, g, b } = type.properties.color;
-            const x = col * TS, y = row * TS;
-            ctx.fillStyle = `rgb(${r},${g},${b})`;
-            ctx.fillRect(x + 1, y + 1, TS - 2, TS - 2);
+        // Placed blocks — group by bui so multi-tile blocks are drawn once.
+        {
+            const buiAnchor = {};
+            for (const [posKey, bui] of Object.entries(workingEntity.blockMap)) {
+                const [tx, ty] = posKey.split(",").map(Number);
+                if (!buiAnchor[bui]) {
+                    buiAnchor[bui] = { tx, ty };
+                } else {
+                    if (tx < buiAnchor[bui].tx) buiAnchor[bui].tx = tx;
+                    if (ty < buiAnchor[bui].ty) buiAnchor[bui].ty = ty;
+                }
+            }
+            for (const [bui, anchor] of Object.entries(buiAnchor)) {
+                const { col, row } = tileToGrid(anchor.tx, anchor.ty);
+                if (!inBounds(col, row)) continue;
+                const datum = workingEntity.blockData[bui];
+                if (!datum) continue;
+                const type = registry[datum.typeId];
+                if (!type) continue;
+                const px = col * TS, py = row * TS;
+                const shapes = tiles.parseShapes(type.properties.shapes);
+                if (shapes) {
+                    tiles.drawShapes(ctx, shapes, px, py, TS);
+                } else {
+                    const { r, g, b } = type.properties.color;
+                    ctx.fillStyle = `rgb(${r},${g},${b})`;
+                    ctx.fillRect(px + 1, py + 1, type.properties.size.x * TS - 2, type.properties.size.y * TS - 2);
+                }
+            }
         }
 
         // Red-cross overlay on disconnected blocks
@@ -233,19 +249,37 @@
                 const dy    = hty - Math.round((minTy + maxTy) / 2);
                 const valid = moveOffset(htx, hty) !== null;
                 const alpha = valid ? 0.45 : 0.25;
+                // Group by bui for multi-tile ghost rendering
+                const ghostAnchor = {};
                 for (const [posKey, bui] of Object.entries(workingEntity.blockMap)) {
                     const [tx, ty] = posKey.split(",").map(Number);
-                    const { col: gc, row: gr } = tileToGrid(tx + dx, ty + dy);
+                    if (!ghostAnchor[bui]) {
+                        ghostAnchor[bui] = { tx, ty };
+                    } else {
+                        if (tx < ghostAnchor[bui].tx) ghostAnchor[bui].tx = tx;
+                        if (ty < ghostAnchor[bui].ty) ghostAnchor[bui].ty = ty;
+                    }
+                }
+                for (const [bui, anchor] of Object.entries(ghostAnchor)) {
+                    const { col: gc, row: gr } = tileToGrid(anchor.tx + dx, anchor.ty + dy);
                     if (!inBounds(gc, gr)) continue;
                     const datum = workingEntity.blockData[bui];
                     if (!datum) continue;
                     const type = registry[datum.typeId];
                     if (!type) continue;
-                    const { r, g, b } = type.properties.color;
-                    ctx.fillStyle = valid
-                        ? `rgba(${r},${g},${b},${alpha})`
-                        : `rgba(230,60,60,${alpha})`;
-                    ctx.fillRect(gc * TS + 1, gr * TS + 1, TS - 2, TS - 2);
+                    const px = gc * TS, py = gr * TS;
+                    const bw = type.properties.size.x * TS;
+                    const bh = type.properties.size.y * TS;
+                    const shapes = tiles.parseShapes(type.properties.shapes);
+                    if (shapes && valid) {
+                        tiles.drawShapes(ctx, shapes, px, py, TS, alpha);
+                    } else {
+                        const { r, g, b } = type.properties.color;
+                        ctx.fillStyle = valid
+                            ? `rgba(${r},${g},${b},${alpha})`
+                            : `rgba(230,60,60,${alpha})`;
+                        ctx.fillRect(px + 1, py + 1, bw - 2, bh - 2);
+                    }
                 }
             }
         }
@@ -253,13 +287,11 @@
         // Hover preview (suppressed in move mode)
         if (!moveMode && hoverCol !== null && selectedTypeId && registry[selectedTypeId]) {
             const type = registry[selectedTypeId];
-            const { r, g, b } = type.properties.color;
             const bw = type.properties.size.x;
             const bh = type.properties.size.y;
             const { tx: htx, ty: hty } = gridToTile(hoverCol, hoverRow);
 
             let canPlace = true;
-            const cells = [];
             for (let dy = 0; dy < bh; dy++) {
                 for (let dx = 0; dx < bw; dx++) {
                     const tx = htx + dx, ty = hty + dy;
@@ -267,18 +299,25 @@
                     if (!inBounds(col, row) || workingEntity.blockMap[tx + "," + ty] !== undefined) {
                         canPlace = false;
                     }
-                    cells.push({ col, row });
                 }
             }
             if (canPlace && !isConnected(htx, hty, bw, bh)) canPlace = false;
 
-            const color = canPlace
-                ? `rgba(${r},${g},${b},0.55)`
-                : "rgba(230,60,60,0.4)";
-            for (const { col, row } of cells) {
-                if (!inBounds(col, row)) continue;
-                ctx.fillStyle = color;
-                ctx.fillRect(col * TS + 1, row * TS + 1, TS - 2, TS - 2);
+            const { col: hc, row: hr } = tileToGrid(htx, hty);
+            if (inBounds(hc, hr)) {
+                const px = hc * TS, py = hr * TS;
+                const shapes = tiles.parseShapes(type.properties.shapes);
+                if (shapes) {
+                    tiles.drawShapes(ctx, shapes, px, py, TS, canPlace ? 0.55 : 0.45);
+                } else {
+                    const { r, g, b } = type.properties.color;
+                    ctx.fillStyle = canPlace ? `rgba(${r},${g},${b},0.55)` : `rgba(230,60,60,0.4)`;
+                    ctx.fillRect(px + 1, py + 1, bw * TS - 2, bh * TS - 2);
+                }
+                if (!canPlace) {
+                    ctx.fillStyle = "rgba(230,60,60,0.35)";
+                    ctx.fillRect(px, py, bw * TS, bh * TS);
+                }
             }
         }
 

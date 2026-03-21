@@ -48,13 +48,21 @@
     // Registry loading
     // =========================================================================
 
-    // Load registry from localStorage; if absent, fetch from server.
+    // Load registry from localStorage; if absent or outdated, fetch from server.
     async function initRegistry() {
         const cached = localStorage.getItem(REGISTRY_KEY);
         if (cached) {
             try {
-                registry = JSON.parse(cached);
-                return;
+                const parsed = JSON.parse(cached);
+                // Invalidate cache if any block type is missing the shapes field
+                // (indicates a pre-shapes-system cache).
+                const stale = Object.values(parsed).some(
+                    t => t.properties && !("shapes" in t.properties)
+                );
+                if (!stale) {
+                    registry = parsed;
+                    return;
+                }
             } catch (_) { /* corrupt cache — fall through to fetch */ }
         }
         await fetchRegistry();
@@ -679,10 +687,53 @@
     // Rendering
     // =========================================================================
 
+    // =========================================================================
+    // Shape rendering
+    // =========================================================================
+
+    // Parse a comma-separated shapes string into an array of {id, nums} objects.
+    // Shape format: "<id>:<num>:<num>:..." where coordinates/sizes are in tiles (1=one tile)
+    // and colors are in 0–1 range.
+    // Supported shapes:
+    //   r:x:y:w:h:cr:cg:cb  — filled rectangle
+    //   c:cx:cy:radius:cr:cg:cb — filled circle
+    function parseShapes(shapesStr) {
+        if (!shapesStr) return null;
+        const shapes = [];
+        for (const part of shapesStr.split(",")) {
+            const tokens = part.trim().split(":");
+            if (tokens.length < 2) continue;
+            shapes.push({ id: tokens[0], nums: tokens.slice(1).map(Number) });
+        }
+        return shapes.length > 0 ? shapes : null;
+    }
+
+    // Draw parsed shapes onto ctx, with block origin at (bx, by) and TS pixels per tile.
+    // Optional alpha (0–1) applied via globalAlpha.
+    function drawShapes(ctx, shapes, bx, by, TS, alpha) {
+        const prevAlpha = ctx.globalAlpha;
+        if (alpha !== undefined) ctx.globalAlpha = alpha;
+        for (const { id, nums } of shapes) {
+            if (id === "r") {
+                const [x, y, w, h, cr, cg, cb] = nums;
+                ctx.fillStyle = "rgb(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + ")";
+                ctx.fillRect(bx + x * TS, by + y * TS, w * TS, h * TS);
+            } else if (id === "c") {
+                const [cx, cy, radius, cr, cg, cb] = nums;
+                ctx.fillStyle = "rgb(" + Math.round(cr * 255) + "," + Math.round(cg * 255) + "," + Math.round(cb * 255) + ")";
+                ctx.beginPath();
+                ctx.arc(bx + cx * TS, by + cy * TS, radius * TS, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        ctx.globalAlpha = prevAlpha;
+    }
+
     // Draw all entity block tiles onto the canvas.
-    // Each tile position in entity.blockMap gets a TILE_SIZE × TILE_SIZE rectangle
-    // coloured by its block type.  The entity's (x, y) and angle are applied so
-    // blocks rotate and translate with the entity.
+    // Each block instance is rendered once (multi-tile blocks anchored at their min tile).
+    // Block appearance is defined by the shapes string in the block type's properties;
+    // falls back to a solid color rectangle if no shapes are defined.
+    // The entity's (x, y) and angle are applied so blocks rotate and translate with the entity.
     function renderBlocks(canvas, entities, camera) {
         if (!registry) return;
 
@@ -737,27 +788,45 @@
             const ox = entity.comOffsetX || 0;
             const oy = entity.comOffsetY || 0;
 
+            // Find the anchor tile (min tx, min ty) for each block instance so
+            // multi-tile blocks are drawn once at their top-left corner.
+            const buiAnchor = {};
             for (const [posKey, bui] of Object.entries(map)) {
+                const [tx, ty] = posKey.split(",").map(Number);
+                if (!buiAnchor[bui]) {
+                    buiAnchor[bui] = { tx, ty };
+                } else {
+                    if (tx < buiAnchor[bui].tx) buiAnchor[bui].tx = tx;
+                    if (ty < buiAnchor[bui].ty) buiAnchor[bui].ty = ty;
+                }
+            }
+
+            for (const [bui, anchor] of Object.entries(buiAnchor)) {
                 const datum = entity.blockData[bui];
                 if (!datum) continue;
                 const type = registry[datum.typeId];
                 if (!type) continue;
 
-                const [tx, ty] = posKey.split(",");
-                const { r, g, b } = type.properties.color;
+                const bw = type.properties.size.x * TILE_SIZE;
+                const bh = type.properties.size.y * TILE_SIZE;
+                const bx = (anchor.tx - 0.5) * TILE_SIZE - ox;
+                const by = (anchor.ty - 0.5) * TILE_SIZE - oy;
+
+                const shapes = parseShapes(type.properties.shapes);
+                if (shapes) {
+                    drawShapes(ctx, shapes, bx, by, TILE_SIZE);
+                } else {
+                    const { r, g, b } = type.properties.color;
+                    ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
+                    ctx.fillRect(bx, by, bw, bh);
+                }
+
                 const maxHealth = type.properties.maxHealth || 1;
                 const damage = maxHealth - (datum.health ?? maxHealth);
                 const redAlpha = Math.min(damage / maxHealth, 1) * 0.3;
-
-                const bx = (Number(tx) - 0.5) * TILE_SIZE - ox;
-                const by = (Number(ty) - 0.5) * TILE_SIZE - oy;
-
-                ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
-                ctx.fillRect(bx, by, TILE_SIZE, TILE_SIZE);
-
                 if (redAlpha > 0) {
                     ctx.fillStyle = "rgba(220,30,30," + redAlpha.toFixed(3) + ")";
-                    ctx.fillRect(bx, by, TILE_SIZE, TILE_SIZE);
+                    ctx.fillRect(bx, by, bw, bh);
                 }
             }
 
@@ -782,6 +851,8 @@
         splitIfDisconnected,
         // Rendering
         renderBlocks,
+        parseShapes,
+        drawShapes,
         // Collision
         resolveCollisions,
         resolveContact,
